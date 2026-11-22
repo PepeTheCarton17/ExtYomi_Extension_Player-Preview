@@ -211,6 +211,10 @@ dependencies {
     implementation(projects.presentationCore)
     implementation(projects.presentationWidget)
 
+    // Standalone app generation: repackage the host fork and sign it on-device.
+    implementation("com.github.REAndroid:ARSCLib:V1.4.0")
+    implementation("com.android.tools.build:apksig:8.9.1")
+
     // Compose
     implementation(compose.activity)
     implementation(compose.foundation)

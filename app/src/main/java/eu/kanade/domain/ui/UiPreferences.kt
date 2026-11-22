@@ -46,10 +46,13 @@ class UiPreferences(
     // Which Manga/Anime sub-tabs are shown (and the default) in Updates/History/Browse.
     fun homeTabsMode() = preferenceStore.getEnum("home_tabs_mode", HomeTabsMode.ANIME_FIRST)
 
-    // Scope persisted when opened from a companion launcher for a single extension.
-    fun companionSourceId() = preferenceStore.getLong("companion_source_id", -1L)
+    // Scope of a generated standalone app: the single extension it is built around.
+    fun standaloneSourceId() = preferenceStore.getLong("standalone_source_id", -1L)
 
-    fun companionKind() = preferenceStore.getString("companion_kind", "")
+    fun standaloneKind() = preferenceStore.getString("standalone_kind", "")
+
+    // SAF tree where generated standalone APKs are written.
+    fun standaloneOutputUri() = preferenceStore.getString("standalone_output_uri", "")
 
     // Order of the bottom nav tabs, as a comma-separated list of NavTab prefKeys. Empty = enum order.
     fun bottomNavOrder() = preferenceStore.getString("bottom_nav_order", "")

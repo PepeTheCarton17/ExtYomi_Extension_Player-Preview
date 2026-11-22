@@ -61,7 +61,6 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.domain.source.anime.interactor.GetAnimeIncognitoState
 import eu.kanade.domain.source.manga.interactor.GetMangaIncognitoState
-import eu.kanade.domain.ui.CompanionScope
 import eu.kanade.presentation.components.AppStateBanners
 import eu.kanade.presentation.components.DownloadedOnlyBannerBackgroundColor
 import eu.kanade.presentation.components.IncognitoModeBannerBackgroundColor
@@ -534,20 +533,6 @@ class MainActivity : BaseActivity() {
                 }
                 null
             }
-            INTENT_OPEN_EXTENSION -> {
-                // Used by generated companion launchers to open a single extension directly.
-                val sourceId = intent.getLongExtra(EXTRA_EXTENSION_SOURCE_ID, -1)
-                if (sourceId < 0) return false
-                val kind = intent.getStringExtra(EXTRA_EXTENSION_KIND)
-                    ?: CompanionScope.KIND_ANIME
-                CompanionScope.save(sourceId, kind)
-                navigator.popUntilRoot()
-                when (kind) {
-                    CompanionScope.KIND_MANGA -> navigator.push(BrowseMangaSourceScreen(sourceId, null))
-                    else -> navigator.push(BrowseAnimeSourceScreen(sourceId, null))
-                }
-                null
-            }
             Intent.ACTION_VIEW -> {
                 // Handling opening of backup files
                 if (intent.data.toString().endsWith(".tachibk")) {
@@ -594,9 +579,6 @@ class MainActivity : BaseActivity() {
     companion object {
         const val INTENT_SEARCH = "eu.kanade.tachiyomi.SEARCH"
         const val INTENT_ANIMESEARCH = "eu.kanade.tachiyomi.ANIMESEARCH"
-        const val INTENT_OPEN_EXTENSION = "eu.kanade.extyomi.OPEN_EXTENSION"
-        const val EXTRA_EXTENSION_SOURCE_ID = "sourceId"
-        const val EXTRA_EXTENSION_KIND = "kind"
         const val INTENT_SEARCH_QUERY = "query"
         const val INTENT_SEARCH_FILTER = "filter"
         const val INTENT_SEARCH_TYPE = "type"

@@ -18,7 +18,7 @@ import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.TabOptions
 import eu.kanade.core.preference.asState
 import eu.kanade.domain.base.BasePreferences
-import eu.kanade.domain.ui.CompanionScope
+import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.domain.ui.model.NavTab
 import eu.kanade.presentation.more.MoreScreen
 import eu.kanade.presentation.util.Tab
@@ -67,11 +67,11 @@ data object MoreTab : Tab {
         val screenModel = rememberScreenModel { MoreScreenModel() }
         val downloadQueueState by screenModel.downloadQueueState.collectAsState()
         val hiddenNavTabs = NavTab.hidden(currentBottomNavTabs()).filter { navTab ->
-            // A companion must not expose navigation into the other content kind.
+            // A standalone app must not expose navigation into the other content kind.
             when {
-                CompanionScope.appliesTo(CompanionScope.KIND_ANIME) ->
+                StandaloneScope.appliesTo(StandaloneScope.KIND_ANIME) ->
                     navTab != NavTab.Manga && navTab != NavTab.Novel
-                CompanionScope.appliesTo(CompanionScope.KIND_MANGA) ->
+                StandaloneScope.appliesTo(StandaloneScope.KIND_MANGA) ->
                     navTab != NavTab.Anime
                 else -> true
             }
@@ -90,7 +90,7 @@ data object MoreTab : Tab {
             onClickStorage = { navigator.push(StorageTab) },
             onClickDataAndStorage = { navigator.push(SettingsScreen(SettingsScreen.Destination.DataAndStorage)) },
             onClickPlayerSettings = { navigator.push(PlayerSettingsScreen(mainSettings = false)) },
-            showPlayerSettings = !CompanionScope.appliesTo(CompanionScope.KIND_MANGA),
+            showPlayerSettings = !StandaloneScope.appliesTo(StandaloneScope.KIND_MANGA),
             onClickSettings = { navigator.push(SettingsScreen()) },
             onClickAbout = { navigator.push(SettingsScreen(SettingsScreen.Destination.About)) },
         )

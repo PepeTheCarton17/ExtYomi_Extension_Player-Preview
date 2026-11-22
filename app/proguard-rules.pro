@@ -82,3 +82,7 @@
 
 # XmlUtil
 -keep public enum nl.adaptivity.xmlutil.EventType { *; }
+
+# Standalone APK generation
+-keep,allowoptimization class com.reandroid.** { *; }
+-keep,allowoptimization class com.android.apksig.** { *; }

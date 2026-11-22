@@ -25,6 +25,7 @@ import dev.mihon.injekt.patchInjekt
 import eu.kanade.domain.DomainModule
 import eu.kanade.domain.SYDomainModule
 import eu.kanade.domain.base.BasePreferences
+import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.domain.ui.model.setAppCompatDelegateThemeMode
 import eu.kanade.tachiyomi.crash.CrashActivity
@@ -117,6 +118,9 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         // SY -->
         Injekt.importModule(SYDomainModule())
         // SY <--
+
+        // Generated standalone apps carry their single-extension config as an asset.
+        StandaloneScope.initializeFromAssets(this)
 
         // Keep the launcher icon alias in sync with the saved preference, so a chosen icon that was
         // removed in an update falls back to an enabled one instead of leaving no launcher entry.

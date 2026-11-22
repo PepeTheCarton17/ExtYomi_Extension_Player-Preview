@@ -20,7 +20,7 @@ import eu.kanade.core.util.fastPartition
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.domain.entries.manga.interactor.UpdateManga
 import eu.kanade.domain.items.chapter.interactor.SetReadStatus
-import eu.kanade.domain.ui.CompanionScope
+import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.presentation.components.SEARCH_DEBOUNCE_MILLIS
 import eu.kanade.presentation.entries.DownloadAction
 import eu.kanade.presentation.library.components.LibraryToolbarTitle
@@ -131,8 +131,8 @@ class MangaLibraryScreenModel(
     private val context = Injekt.get<Application>()
     private val seriesCoverCache = SeriesCoverCache(context, libraryPreferences)
 
-    // When launched from a companion, show only entries from that extension.
-    private val companionSourceId = CompanionScope.sourceIdFor(CompanionScope.KIND_MANGA)
+    // In a standalone app, show only entries from its extension.
+    private val standaloneSourceId = StandaloneScope.sourceIdFor(StandaloneScope.KIND_MANGA)
 
     // Per-media-type library preferences: novels keep their own so tweaking one library doesn't
     // change the other. Each returns the novel-only pref when [novelOnly], else the manga one.
@@ -261,7 +261,7 @@ class MangaLibraryScreenModel(
         (if (novelOnly) getNovelLibraryManga.subscribe() else getLibraryManga.subscribe())
             .map { list ->
                 list.asSequence()
-                    .filter { companionSourceId < 0 || it.manga.source == companionSourceId }
+                    .filter { standaloneSourceId < 0 || it.manga.source == standaloneSourceId }
                     .flatMap { it.manga.genre.orEmpty().asSequence() }
                     .map { it.trim() }
                     .filter { it.isNotEmpty() }
@@ -556,7 +556,7 @@ class MangaLibraryScreenModel(
         ) { libraryMangaList, prefs, _, pinnedIds, seriesSet ->
             val seriesById = SeriesGrouping.decode(seriesSet)
             libraryMangaList
-                .filter { companionSourceId < 0 || it.manga.source == companionSourceId }
+                .filter { standaloneSourceId < 0 || it.manga.source == standaloneSourceId }
                 .map { libraryManga ->
                     // Display mode based on user preference: take it from global library setting or category
                     MangaLibraryItem(

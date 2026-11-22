@@ -13,6 +13,7 @@ import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.TabOptions
+import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.presentation.components.TabbedScreen
 import eu.kanade.presentation.util.Tab
 import eu.kanade.tachiyomi.R
@@ -28,6 +29,7 @@ import eu.kanade.tachiyomi.ui.browse.manga.source.mangaSourcesTab
 import eu.kanade.tachiyomi.ui.browse.novel.migrateNovelSourceTab
 import eu.kanade.tachiyomi.ui.browse.novel.novelExtensionsTab
 import eu.kanade.tachiyomi.ui.browse.novel.novelSourcesTab
+import eu.kanade.tachiyomi.ui.browse.standalone.standaloneAppsTab
 import eu.kanade.tachiyomi.ui.main.MainActivity
 import eu.kanade.tachiyomi.ui.reader.loader.NovelSourceCompat
 import kotlinx.collections.immutable.persistentListOf
@@ -89,7 +91,7 @@ data object BrowseTab : Tab {
         // anime/manga/novel order). The extension tabs carry their own search binding (see
         // TabContent.onChangeSearchQuery), so this order no longer depends on the legacy
         // currentPage % 2 parity in TabbedScreen.
-        val tabs = persistentListOf(
+        val baseTabs = persistentListOf(
             animeSourcesTab(),
             mangaSourcesTab(),
             novelSourcesTab(),
@@ -100,6 +102,12 @@ data object BrowseTab : Tab {
             migrateMangaSourceTab(),
             migrateNovelSourceTab(),
         )
+        // A generated standalone app must not offer a way to generate more apps.
+        val tabs = if (StandaloneScope.isActive) {
+            baseTabs
+        } else {
+            baseTabs.add(standaloneAppsTab())
+        }
 
         val state = rememberPagerState { tabs.size }
 

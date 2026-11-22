@@ -63,7 +63,7 @@ import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
 import eu.kanade.domain.source.service.SourcePreferences
-import eu.kanade.domain.ui.CompanionScope
+import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.domain.ui.model.NavBarLabelMode
 import eu.kanade.domain.ui.model.NavTab
@@ -122,11 +122,12 @@ object HomeScreen : Screen() {
     override fun Content() {
         val enabledTabs by uiPreferences.bottomNavTabs().collectAsState()
         val tabOrder by uiPreferences.bottomNavOrder().collectAsState()
-        val shownTabs = if (CompanionScope.isActive) {
-            // A companion is a single-extension app: only its content tab and More (settings) remain.
+        val shownTabs = if (StandaloneScope.isActive) {
+            // A standalone app keeps only its feed, library and settings.
             buildList {
+                add(StandaloneFeedTab)
                 add(
-                    if (CompanionScope.kind == CompanionScope.KIND_MANGA) {
+                    if (StandaloneScope.kind == StandaloneScope.KIND_MANGA) {
                         MangaLibraryTab
                     } else {
                         AnimeLibraryTab

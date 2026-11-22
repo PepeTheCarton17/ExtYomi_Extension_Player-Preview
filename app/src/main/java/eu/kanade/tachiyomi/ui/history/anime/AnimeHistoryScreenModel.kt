@@ -7,7 +7,7 @@ import cafe.adriel.voyager.core.model.screenModelScope
 import eu.kanade.core.util.insertSeparators
 import eu.kanade.domain.entries.anime.interactor.UpdateAnime
 import eu.kanade.domain.track.anime.interactor.AddAnimeTracks
-import eu.kanade.domain.ui.CompanionScope
+import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.presentation.history.anime.AnimeHistoryUiModel
 import eu.kanade.tachiyomi.util.lang.toLocalDate
 import kotlinx.collections.immutable.ImmutableList
@@ -63,7 +63,7 @@ class AnimeHistoryScreenModel(
     private val sourceManager: AnimeSourceManager = Injekt.get(),
 ) : StateScreenModel<AnimeHistoryScreenModel.State>(State()) {
 
-    private val companionSourceId = CompanionScope.sourceIdFor(CompanionScope.KIND_ANIME)
+    private val standaloneSourceId = StandaloneScope.sourceIdFor(StandaloneScope.KIND_ANIME)
 
     private val _events: Channel<Event> = Channel(Channel.UNLIMITED)
     val events: Flow<Event> = _events.receiveAsFlow()
@@ -94,7 +94,7 @@ class AnimeHistoryScreenModel(
     }
 
     private fun List<AnimeHistoryWithRelations>.toAnimeHistoryUiModels(): List<AnimeHistoryUiModel> {
-        return filter { companionSourceId < 0 || it.coverData.sourceId == companionSourceId }
+        return filter { standaloneSourceId < 0 || it.coverData.sourceId == standaloneSourceId }
             .map { AnimeHistoryUiModel.Item(it) }
             .insertSeparators { before, after ->
                 val beforeDate = before?.item?.seenAt?.time?.toLocalDate()

@@ -7,7 +7,7 @@ import cafe.adriel.voyager.core.model.screenModelScope
 import eu.kanade.core.util.insertSeparators
 import eu.kanade.domain.entries.manga.interactor.UpdateManga
 import eu.kanade.domain.track.manga.interactor.AddMangaTracks
-import eu.kanade.domain.ui.CompanionScope
+import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.presentation.history.manga.MangaHistoryUiModel
 import eu.kanade.tachiyomi.util.lang.toLocalDate
 import kotlinx.collections.immutable.ImmutableList
@@ -66,7 +66,7 @@ class MangaHistoryScreenModel(
     private val sourceManager: MangaSourceManager = Injekt.get(),
 ) : StateScreenModel<MangaHistoryScreenModel.State>(State()) {
 
-    private val companionSourceId = CompanionScope.sourceIdFor(CompanionScope.KIND_MANGA)
+    private val standaloneSourceId = StandaloneScope.sourceIdFor(StandaloneScope.KIND_MANGA)
 
     private val _events: Channel<Event> = Channel(Channel.UNLIMITED)
     val events: Flow<Event> = _events.receiveAsFlow()
@@ -99,7 +99,7 @@ class MangaHistoryScreenModel(
         // Split by the persisted is_novel flag carried on each row (no runtime source classification),
         // so novels don't leak into the manga history during the cold-start source-loading race.
         return filter { it.isNovel == novelOnly }
-            .filter { companionSourceId < 0 || it.coverData.sourceId == companionSourceId }
+            .filter { standaloneSourceId < 0 || it.coverData.sourceId == standaloneSourceId }
             .map { MangaHistoryUiModel.Item(it) }
             .insertSeparators { before, after ->
                 val beforeDate = before?.item?.readAt?.time?.toLocalDate()

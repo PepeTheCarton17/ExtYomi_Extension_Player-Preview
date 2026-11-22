@@ -20,7 +20,7 @@ import eu.kanade.core.util.fastPartition
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.domain.entries.anime.interactor.UpdateAnime
 import eu.kanade.domain.items.episode.interactor.SetSeenStatus
-import eu.kanade.domain.ui.CompanionScope
+import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.presentation.components.SEARCH_DEBOUNCE_MILLIS
 import eu.kanade.presentation.entries.DownloadAction
 import eu.kanade.presentation.library.components.LibraryToolbarTitle
@@ -123,8 +123,8 @@ class AnimeLibraryScreenModel(
     private val context = Injekt.get<Application>()
     private val seriesCoverCache = SeriesCoverCache(context, libraryPreferences)
 
-    // When launched from a companion, show only entries from that extension.
-    private val companionSourceId = CompanionScope.sourceIdFor(CompanionScope.KIND_ANIME)
+    // In a standalone app, show only entries from its extension.
+    private val standaloneSourceId = StandaloneScope.sourceIdFor(StandaloneScope.KIND_ANIME)
 
     init {
         screenModelScope.launchIO {
@@ -219,7 +219,7 @@ class AnimeLibraryScreenModel(
         getLibraryAnime.subscribe()
             .map { list ->
                 list.asSequence()
-                    .filter { companionSourceId < 0 || it.anime.source == companionSourceId }
+                    .filter { standaloneSourceId < 0 || it.anime.source == standaloneSourceId }
                     .flatMap { it.anime.genre.orEmpty().asSequence() }
                     .map { it.trim() }
                     .filter { it.isNotEmpty() }
@@ -520,7 +520,7 @@ class AnimeLibraryScreenModel(
         ) { animelibAnimeList, prefs, _, pinnedIds, seriesSet ->
             val seriesById = SeriesGrouping.decode(seriesSet)
             animelibAnimeList
-                .filter { companionSourceId < 0 || it.anime.source == companionSourceId }
+                .filter { standaloneSourceId < 0 || it.anime.source == standaloneSourceId }
                 .map { animelibAnime ->
                     // Display mode based on user preference: take it from global library setting or category
                     AnimeLibraryItem(
