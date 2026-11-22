@@ -153,7 +153,7 @@ object StandaloneAppGenerator {
         val source = "s" + java.lang.Long.toUnsignedString(item.sourceId, 16)
         // The signer can change if the generator is reinstalled. Including its fingerprint keeps
         // a regenerated app from clashing with an older one signed with a different key.
-        val signer = Hash.sha256(certificate.toByteArray()).take(8).lowercase(Locale.ROOT)
+        val signer = Hash.sha256(certificate.encoded).take(8).lowercase(Locale.ROOT)
         return "${BuildConfig.APPLICATION_ID}.standalone.$prefix.$source.k$signer"
     }
 
