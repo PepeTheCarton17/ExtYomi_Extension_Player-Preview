@@ -57,7 +57,7 @@ fun BrowseAnimeSourceToolbar(
         searchQuery = searchQuery,
         onChangeSearchQuery = onSearchQueryChange,
         onSearch = onSearch,
-        onClickCloseSearch = navigateUp,
+        onClickCloseSearch = navigateUp ?: { onSearchQueryChange(null) },
         actions = {
             AppBarActions(
                 actions = persistentListOf<AppBar.AppBarAction>().builder()

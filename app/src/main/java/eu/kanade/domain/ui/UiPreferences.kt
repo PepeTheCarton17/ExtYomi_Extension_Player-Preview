@@ -5,8 +5,8 @@ import eu.kanade.domain.ui.model.AppTheme
 import eu.kanade.domain.ui.model.HomeTabsMode
 import eu.kanade.domain.ui.model.NavBarLabelMode
 import eu.kanade.domain.ui.model.NavTab
-import eu.kanade.domain.ui.model.StartScreen
 import eu.kanade.domain.ui.model.StandaloneHomeMode
+import eu.kanade.domain.ui.model.StartScreen
 import eu.kanade.domain.ui.model.TabletUiMode
 import eu.kanade.domain.ui.model.ThemeMode
 import eu.kanade.tachiyomi.util.system.DeviceUtil

@@ -62,8 +62,8 @@ import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.domain.ui.model.AppIcon
 import eu.kanade.domain.ui.model.HomeTabsMode
 import eu.kanade.domain.ui.model.NavBarLabelMode
-import eu.kanade.domain.ui.model.StartScreen
 import eu.kanade.domain.ui.model.StandaloneHomeMode
+import eu.kanade.domain.ui.model.StartScreen
 import eu.kanade.domain.ui.model.TabletUiMode
 import eu.kanade.domain.ui.model.ThemeMode
 import eu.kanade.domain.ui.model.setAppCompatDelegateThemeMode
