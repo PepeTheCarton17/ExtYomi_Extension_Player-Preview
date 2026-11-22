@@ -35,9 +35,9 @@ import eu.kanade.presentation.more.settings.widget.TextPreferenceWidget
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.ScrollbarLazyColumn
 import tachiyomi.presentation.core.i18n.stringResource
-import tachiyomi.presentation.core.util.collectAsState as collectPreferenceAsState
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import tachiyomi.presentation.core.util.collectAsState as collectPreferenceAsState
 
 @Composable
 fun standaloneAppsTab(): TabContent {

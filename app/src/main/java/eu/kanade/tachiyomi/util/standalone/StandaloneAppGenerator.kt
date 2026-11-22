@@ -10,13 +10,13 @@ import android.os.Build
 import androidx.core.content.pm.PackageInfoCompat
 import com.android.apksig.ApkSigner
 import com.hippo.unifile.UniFile
+import com.reandroid.apk.ApkModule
 import com.reandroid.archive.ByteInputSource
 import com.reandroid.archive.InputSource
-import com.reandroid.apk.ApkModule
 import com.reandroid.arsc.value.ValueType
+import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.tachiyomi.BuildConfig
 import eu.kanade.tachiyomi.R
-import eu.kanade.tachiyomi.domain.ui.StandaloneScope
 import eu.kanade.tachiyomi.ui.browse.standalone.StandaloneExtensionItem
 import eu.kanade.tachiyomi.util.lang.Hash
 import kotlinx.coroutines.Dispatchers
@@ -85,7 +85,10 @@ object StandaloneAppGenerator {
                 }
             }
 
-            replaceLauncherIcons(module, item.icon ?: context.getDrawable(R.mipmap.ic_launcher))
+            val launcherIcon = item.icon
+                ?: context.getDrawable(R.mipmap.ic_launcher)
+                ?: error("No launcher icon available for the standalone app")
+            replaceLauncherIcons(module, launcherIcon)
 
             // Remove the host signature; a re-signed APK must not keep stale META-INF entries.
             module.inputSources.toList().forEach { source ->

@@ -1,13 +1,13 @@
 package eu.kanade.domain.ui
 
 import android.content.Context
+import eu.kanade.domain.extension.anime.interactor.TrustAnimeExtension
+import eu.kanade.domain.extension.manga.interactor.TrustMangaExtension
 import org.json.JSONObject
 import tachiyomi.core.common.util.system.logcat
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.io.IOException
-import eu.kanade.domain.extension.anime.interactor.TrustAnimeExtension
-import eu.kanade.domain.extension.manga.interactor.TrustMangaExtension
 
 /**
  * Scope baked into a generated standalone app.
