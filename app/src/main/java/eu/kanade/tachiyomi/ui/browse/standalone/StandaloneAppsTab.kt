@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.rememberScreenModel
+import cafe.adriel.voyager.core.screen.Screen
 import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.presentation.components.TabContent
 import eu.kanade.presentation.more.settings.widget.TextPreferenceWidget
@@ -40,7 +41,7 @@ import uy.kohesive.injekt.api.get
 import tachiyomi.presentation.core.util.collectAsState as collectPreferenceAsState
 
 @Composable
-fun standaloneAppsTab(): TabContent {
+fun Screen.standaloneAppsTab(): TabContent {
     val context = LocalContext.current
     val screenModel = rememberScreenModel { StandaloneAppsScreenModel() }
     val state by screenModel.state.collectAsState()
