@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
+import androidx.core.net.toUri
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
 import com.hippo.unifile.UniFile
@@ -66,7 +67,7 @@ fun Screen.standaloneAppsTab(): TabContent {
     }
     val outputUri = configuredOutputUri.ifBlank { defaultOutputUri }
     val outputPath = remember(outputUri) {
-        UniFile.fromUri(context, outputUri)?.displayablePath.orEmpty()
+        UniFile.fromUri(context, outputUri.toUri())?.displayablePath.orEmpty()
     }
 
     val folderPicker = rememberLauncherForActivityResult(
