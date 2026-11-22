@@ -75,6 +75,7 @@ fun AppBar(
     // Up button
     navigateUp: (() -> Unit)? = null,
     navigationIcon: ImageVector? = null,
+    navigationIconContent: (@Composable () -> Unit)? = null,
     // Menu
     actions: @Composable RowScope.() -> Unit = {},
     // Action mode
@@ -100,6 +101,7 @@ fun AppBar(
         },
         navigateUp = navigateUp,
         navigationIcon = navigationIcon,
+        navigationIconContent = navigationIconContent,
         actions = {
             if (isActionMode) {
                 actionModeActions()
@@ -123,6 +125,7 @@ fun AppBar(
     // Up button
     navigateUp: (() -> Unit)? = null,
     navigationIcon: ImageVector? = null,
+    navigationIconContent: (@Composable () -> Unit)? = null,
     // Menu
     actions: @Composable RowScope.() -> Unit = {},
     // Action mode
@@ -144,8 +147,13 @@ fun AppBar(
                         )
                     }
                 } else {
-                    navigateUp?.let {
-                        IconButton(onClick = it) {
+                    val customIcon = navigationIconContent
+                    when {
+                        customIcon != null && navigateUp != null -> IconButton(onClick = navigateUp) {
+                            customIcon()
+                        }
+                        customIcon != null -> customIcon()
+                        navigateUp != null -> IconButton(onClick = navigateUp) {
                             UpIcon(navigationIcon = navigationIcon)
                         }
                     }
@@ -291,6 +299,7 @@ fun SearchToolbar(
     modifier: Modifier = Modifier,
     titleContent: @Composable () -> Unit = {},
     navigateUp: (() -> Unit)? = null,
+    navigationIconContent: (@Composable () -> Unit)? = null,
     searchEnabled: Boolean = true,
     placeholderText: String? = null,
     onSearch: (String) -> Unit = {},
@@ -367,6 +376,7 @@ fun SearchToolbar(
             )
         },
         navigateUp = if (searchQuery == null) navigateUp else onClickCloseSearch,
+        navigationIconContent = if (searchQuery == null) navigationIconContent else null,
         actions = {
             key("search") {
                 val onClick = { onChangeSearchQuery("") }

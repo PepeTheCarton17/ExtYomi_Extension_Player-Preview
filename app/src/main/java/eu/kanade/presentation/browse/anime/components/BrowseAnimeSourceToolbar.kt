@@ -32,7 +32,8 @@ fun BrowseAnimeSourceToolbar(
     source: AnimeSource?,
     displayMode: LibraryDisplayMode,
     onDisplayModeChange: (LibraryDisplayMode) -> Unit,
-    navigateUp: () -> Unit,
+    navigateUp: (() -> Unit)?,
+    navigationIconContent: (@Composable () -> Unit)? = null,
     onWebViewClick: () -> Unit,
     onHelpClick: () -> Unit,
     onSettingsClick: () -> Unit,
@@ -51,6 +52,7 @@ fun BrowseAnimeSourceToolbar(
 
     SearchToolbar(
         navigateUp = navigateUp,
+        navigationIconContent = navigationIconContent,
         titleContent = { AppBarTitle(title) },
         searchQuery = searchQuery,
         onChangeSearchQuery = onSearchQueryChange,

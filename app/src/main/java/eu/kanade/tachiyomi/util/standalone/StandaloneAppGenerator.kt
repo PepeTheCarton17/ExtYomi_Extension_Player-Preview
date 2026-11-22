@@ -80,13 +80,16 @@ object StandaloneAppGenerator {
             // New identity. setPackageName updates both the manifest and the resource table.
             module.setPackageName(newPackage)
             manifest.setApplicationLabel(item.name)
-            pointLauncherIconAtReplacedBitmap(manifest)
+            pointLauncherIconAtReplacedBitmap(manifest, module)
 
             // Several providers come from libraries and use fixed or package-derived authorities.
             // All of them must be unique on-device or the install fails with a package conflict.
             rewriteManifestIdentities(manifest, oldPackage, newPackage)
 
-            val launcherIcon = item.icon
+            val launcherIcon = runCatching {
+                context.packageManager.getApplicationIcon(item.extensionPkg)
+            }.getOrNull()
+                ?: item.icon
                 ?: context.getDrawable(R.mipmap.ic_launcher)
                 ?: error("No launcher icon available for the standalone app")
             replaceLauncherIcons(module, launcherIcon)
@@ -229,17 +232,32 @@ object StandaloneAppGenerator {
 
     /**
      * The default launcher icon is an adaptive XML which would keep showing the original art on
-     * API 26+ even after its PNGs are replaced. Point the manifest at a plain mipmap instead.
+     * API 26+ even after its PNGs are replaced. Point the application and every launcher alias at
+     * the plain mipmap that now contains the extension's icon.
+     *
+     * The attribute must be a real resource reference, not the literal string "@mipmap/...", or
+     * Android cannot resolve it and falls back to the default icon.
      */
-    private fun pointLauncherIconAtReplacedBitmap(manifest: AndroidManifestBlock) {
-        val application = manifest.applicationElement ?: return
-        listOf(
-            AndroidManifest.NAME_icon to AndroidManifest.ID_icon,
-            AndroidManifest.NAME_roundIcon to AndroidManifest.ID_roundIcon,
-        ).forEach { (name, id) ->
-            val attribute = application.searchAttributeByResourceId(id)
-                ?: application.getOrCreateAndroidAttribute(name, id)
-            attribute.setValueAsString("@mipmap/ic_launcher_monochrome")
+    private fun pointLauncherIconAtReplacedBitmap(
+        manifest: AndroidManifestBlock,
+        module: ApkModule,
+    ) {
+        val iconResId = module.tableBlock.resolveResourceId(null, "mipmap", "ic_launcher_monochrome")
+        require(iconResId != 0) { "mipmap/ic_launcher_monochrome is missing from resources.arsc" }
+
+        val targets = listOfNotNull(manifest.applicationElement) +
+            manifest.recursiveElements().asSequence()
+                .filter { it.equalsName("activity-alias") }
+                .toList()
+        targets.forEach { element ->
+            listOf(
+                AndroidManifest.NAME_icon to AndroidManifest.ID_icon,
+                AndroidManifest.NAME_roundIcon to AndroidManifest.ID_roundIcon,
+            ).forEach { (name, id) ->
+                val attribute = element.searchAttributeByResourceId(id)
+                    ?: element.getOrCreateAndroidAttribute(name, id)
+                attribute.setValueAsResourceId(iconResId)
+            }
         }
     }
 

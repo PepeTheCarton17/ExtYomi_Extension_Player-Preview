@@ -10,8 +10,9 @@ El generador toma el APK instalado de ExtYomi —es decir, el fork completo— y
 
 - nuevo `packageName` derivado del paquete de la extensión, del `sourceId` y de la huella de la
   clave de firma (así una regeneración no choca con una app antigua firmada por otra clave);
-- nombre y icono reales de la extensión (el manifiesto deja de usar el icono adaptativo para que
-  el bitmap reemplazado se vea también en Android 8+);
+- nombre y icono reales de la extensión: se toma el icono de launcher del paquete de la extensión,
+  se sustituyen los PNG del icono y se reescriben `android:icon`/`android:roundIcon` como
+  referencias de recurso reales en `<application>` y en todos los alias de launcher;
 - `assets/standalone_config.json` con `sourceId`, `kind`, paquete de la extensión, versión y huella
   de su certificado;
 - nombres de componentes relativos expandidos antes de cambiar el package, para que sigan
@@ -31,9 +32,12 @@ Al arrancar, `StandaloneScope.initializeFromAssets()` lee la configuración y:
 
 - marca la extensión como de confianza en el almacenamiento privado de la nueva app;
 - fija el `sourceId` y el `kind` (anime o manga);
-- Home muestra solo **Feed** (catálogo de esa fuente), **Biblioteca** y **Ajustes**;
+- Home muestra solo **Feed** (catálogo de esa fuente), **Biblioteca** y **Más**;
+- el catálogo sustituye la flecha de retroceso por el icono de la extensión;
 - Biblioteca e Historial se filtran por ese `sourceId`;
-- Ajustes muestra el reproductor para anime y el lector para manga;
+- Ajustes → Apariencia incluye «Pantalla de inicio» para elegir entre **Feed (catálogo)** y
+  **New Home (biblioteca)**; se ocultan los ajustes de anime/manga/novelas y el selector de icono,
+  que no aplican a una app de una sola fuente;
 - el apartado «Apps independientes» desaparece.
 
 La app generada usa el sistema de extensiones de Nekoyomi tal cual, pero queda reducida a una sola

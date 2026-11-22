@@ -57,11 +57,13 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
+import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.domain.ui.model.AppIcon
 import eu.kanade.domain.ui.model.HomeTabsMode
 import eu.kanade.domain.ui.model.NavBarLabelMode
 import eu.kanade.domain.ui.model.StartScreen
+import eu.kanade.domain.ui.model.StandaloneHomeMode
 import eu.kanade.domain.ui.model.TabletUiMode
 import eu.kanade.domain.ui.model.ThemeMode
 import eu.kanade.domain.ui.model.setAppCompatDelegateThemeMode
@@ -182,78 +184,112 @@ object SettingsAppearanceScreen : SearchableSettings {
 
         return Preference.PreferenceGroup(
             title = stringResource(MR.strings.pref_category_general),
-            preferenceItems = persistentListOf(
-                Preference.PreferenceItem.TextPreference(
-                    title = stringResource(MR.strings.pref_app_language),
-                    onClick = { navigator.push(AppLanguageScreen()) },
-                ),
-                Preference.PreferenceItem.ListPreference(
-                    preference = uiPreferences.startScreen(),
-                    entries = StartScreen.entries
-                        .associateWith { stringResource(it.titleRes) }
-                        .toImmutableMap(),
-                    title = stringResource(AYMR.strings.pref_start_screen),
-                    onValueChanged = {
-                        context.toast(MR.strings.requires_app_restart)
-                        true
-                    },
-                ),
-                Preference.PreferenceItem.ListPreference(
-                    preference = uiPreferences.tabletUiMode(),
-                    entries = TabletUiMode.entries
-                        .associateWith { stringResource(it.titleRes) }
-                        .toImmutableMap(),
-                    title = stringResource(MR.strings.pref_tablet_ui_mode),
-                    onValueChanged = {
-                        context.toast(MR.strings.requires_app_restart)
-                        true
-                    },
-                ),
-                Preference.PreferenceItem.ListPreference(
-                    preference = uiPreferences.homeTabsMode(),
-                    entries = persistentMapOf(
-                        HomeTabsMode.ANIME_FIRST to stringResource(AYMR.strings.pref_home_tabs_both_anime),
-                        HomeTabsMode.MANGA_FIRST to stringResource(AYMR.strings.pref_home_tabs_both_manga),
-                        HomeTabsMode.ANIME_ONLY to stringResource(AYMR.strings.pref_home_tabs_anime_only),
-                        HomeTabsMode.MANGA_ONLY to stringResource(AYMR.strings.pref_home_tabs_manga_only),
+            preferenceItems = buildList<Preference.PreferenceItem<out Any>> {
+                add(
+                    Preference.PreferenceItem.TextPreference(
+                        title = stringResource(MR.strings.pref_app_language),
+                        onClick = { navigator.push(AppLanguageScreen()) },
                     ),
-                    title = stringResource(AYMR.strings.pref_home_tabs_mode),
-                    subtitle = stringResource(AYMR.strings.pref_home_tabs_mode_summary),
-                    onValueChanged = {
-                        context.toast(MR.strings.requires_app_restart)
-                        true
-                    },
-                ),
-                Preference.PreferenceItem.CustomPreference(
-                    title = stringResource(AYMR.strings.pref_app_icon),
-                ) {
-                    AppIconPreference(
-                        preference = uiPreferences.appIcon(),
-                        title = stringResource(AYMR.strings.pref_app_icon),
-                        onIconSelected = { icon, restartNow ->
-                            // Only save the choice here; App.onCreate applies the alias on the next
-                            // start. Applying it now would both close the app (the alias the current
-                            // task launched from gets disabled) and leave getLaunchIntentForPackage
-                            // momentarily null, so the relaunch below wouldn't fire.
-                            uiPreferences.appIcon().set(icon)
-                            if (restartNow) {
-                                // Switch the launcher alias now. This is the original mechanism that
-                                // actually changes the icon; on some launchers (Samsung) the app
-                                // closes when its alias changes, and App.onCreate re-applies the
-                                // saved icon on the next start regardless.
-                                AppIconManager.apply(context, icon)
-                            } else {
+                )
+                if (StandaloneScope.isActive) {
+                    // A generated app has a single source, so the generic start-screen and
+                    // Anime/Manga/Novel switches are replaced by this one.
+                    add(
+                        Preference.PreferenceItem.ListPreference(
+                            preference = uiPreferences.standaloneHomeMode(),
+                            entries = StandaloneHomeMode.entries
+                                .associateWith { stringResource(it.titleRes) }
+                                .toImmutableMap(),
+                            title = stringResource(MR.strings.pref_standalone_home_mode),
+                            onValueChanged = {
                                 context.toast(MR.strings.requires_app_restart)
-                            }
+                                true
+                            },
+                        ),
+                    )
+                } else {
+                    add(
+                        Preference.PreferenceItem.ListPreference(
+                            preference = uiPreferences.startScreen(),
+                            entries = StartScreen.entries
+                                .associateWith { stringResource(it.titleRes) }
+                                .toImmutableMap(),
+                            title = stringResource(AYMR.strings.pref_start_screen),
+                            onValueChanged = {
+                                context.toast(MR.strings.requires_app_restart)
+                                true
+                            },
+                        ),
+                    )
+                }
+                add(
+                    Preference.PreferenceItem.ListPreference(
+                        preference = uiPreferences.tabletUiMode(),
+                        entries = TabletUiMode.entries
+                            .associateWith { stringResource(it.titleRes) }
+                            .toImmutableMap(),
+                        title = stringResource(MR.strings.pref_tablet_ui_mode),
+                        onValueChanged = {
+                            context.toast(MR.strings.requires_app_restart)
+                            true
+                        },
+                    ),
+                )
+                if (!StandaloneScope.isActive) {
+                    add(
+                        Preference.PreferenceItem.ListPreference(
+                            preference = uiPreferences.homeTabsMode(),
+                            entries = persistentMapOf(
+                                HomeTabsMode.ANIME_FIRST to stringResource(AYMR.strings.pref_home_tabs_both_anime),
+                                HomeTabsMode.MANGA_FIRST to stringResource(AYMR.strings.pref_home_tabs_both_manga),
+                                HomeTabsMode.ANIME_ONLY to stringResource(AYMR.strings.pref_home_tabs_anime_only),
+                                HomeTabsMode.MANGA_ONLY to stringResource(AYMR.strings.pref_home_tabs_manga_only),
+                            ),
+                            title = stringResource(AYMR.strings.pref_home_tabs_mode),
+                            subtitle = stringResource(AYMR.strings.pref_home_tabs_mode_summary),
+                            onValueChanged = {
+                                context.toast(MR.strings.requires_app_restart)
+                                true
+                            },
+                        ),
+                    )
+                    // Changing the launcher alias here would replace the extension icon baked
+                    // into the generated APK, so keep it out of standalone apps.
+                    add(
+                        Preference.PreferenceItem.CustomPreference(
+                            title = stringResource(AYMR.strings.pref_app_icon),
+                        ) {
+                            AppIconPreference(
+                                preference = uiPreferences.appIcon(),
+                                title = stringResource(AYMR.strings.pref_app_icon),
+                                onIconSelected = { icon, restartNow ->
+                                    // Only save the choice here; App.onCreate applies the alias on the next
+                                    // start. Applying it now would both close the app (the alias the current
+                                    // task launched from gets disabled) and leave getLaunchIntentForPackage
+                                    // momentarily null, so the relaunch below wouldn't fire.
+                                    uiPreferences.appIcon().set(icon)
+                                    if (restartNow) {
+                                        // Switch the launcher alias now. This is the original mechanism that
+                                        // actually changes the icon; on some launchers (Samsung) the app
+                                        // closes when its alias changes, and App.onCreate re-applies the
+                                        // saved icon on the next start regardless.
+                                        AppIconManager.apply(context, icon)
+                                    } else {
+                                        context.toast(MR.strings.requires_app_restart)
+                                    }
+                                },
+                            )
                         },
                     )
-                },
-                Preference.PreferenceItem.SwitchPreference(
-                    preference = uiPreferences.showDownloadSize(),
-                    title = stringResource(AYMR.strings.pref_show_download_size),
-                    subtitle = stringResource(AYMR.strings.pref_show_download_size_summary),
-                ),
-            ),
+                }
+                add(
+                    Preference.PreferenceItem.SwitchPreference(
+                        preference = uiPreferences.showDownloadSize(),
+                        title = stringResource(AYMR.strings.pref_show_download_size),
+                        subtitle = stringResource(AYMR.strings.pref_show_download_size_summary),
+                    ),
+                )
+            }.toImmutableList(),
         )
     }
 
@@ -267,13 +303,15 @@ object SettingsAppearanceScreen : SearchableSettings {
         return Preference.PreferenceGroup(
             title = stringResource(AYMR.strings.pref_category_navigation),
             preferenceItems = buildList<Preference.PreferenceItem<out Any>> {
-                add(
-                    Preference.PreferenceItem.TextPreference(
-                        title = stringResource(AYMR.strings.pref_navigation_style),
-                        subtitle = stringResource(AYMR.strings.pref_navigation_style_summary),
-                        onClick = { navigator.push(NavBarOrderScreen()) },
-                    ),
-                )
+                if (!StandaloneScope.isActive) {
+                    add(
+                        Preference.PreferenceItem.TextPreference(
+                            title = stringResource(AYMR.strings.pref_navigation_style),
+                            subtitle = stringResource(AYMR.strings.pref_navigation_style_summary),
+                            onClick = { navigator.push(NavBarOrderScreen()) },
+                        ),
+                    )
+                }
                 add(
                     Preference.PreferenceItem.ListPreference(
                         preference = uiPreferences.bottomNavLabelMode(),

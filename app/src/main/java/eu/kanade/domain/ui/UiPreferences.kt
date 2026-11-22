@@ -6,6 +6,7 @@ import eu.kanade.domain.ui.model.HomeTabsMode
 import eu.kanade.domain.ui.model.NavBarLabelMode
 import eu.kanade.domain.ui.model.NavTab
 import eu.kanade.domain.ui.model.StartScreen
+import eu.kanade.domain.ui.model.StandaloneHomeMode
 import eu.kanade.domain.ui.model.TabletUiMode
 import eu.kanade.domain.ui.model.ThemeMode
 import eu.kanade.tachiyomi.util.system.DeviceUtil
@@ -50,6 +51,9 @@ class UiPreferences(
     fun standaloneSourceId() = preferenceStore.getLong("standalone_source_id", -1L)
 
     fun standaloneKind() = preferenceStore.getString("standalone_kind", "")
+
+    // Which screen a generated standalone app opens on: its source feed or its library.
+    fun standaloneHomeMode() = preferenceStore.getEnum("standalone_home_mode", StandaloneHomeMode.FEED)
 
     // SAF tree where generated standalone APKs are written.
     fun standaloneOutputUri() = preferenceStore.getString("standalone_output_uri", "")

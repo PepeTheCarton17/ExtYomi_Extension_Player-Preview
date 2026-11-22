@@ -33,7 +33,8 @@ fun BrowseMangaSourceToolbar(
     source: MangaSource?,
     displayMode: LibraryDisplayMode,
     onDisplayModeChange: (LibraryDisplayMode) -> Unit,
-    navigateUp: () -> Unit,
+    navigateUp: (() -> Unit)?,
+    navigationIconContent: (@Composable () -> Unit)? = null,
     onWebViewClick: () -> Unit,
     onHelpClick: () -> Unit,
     onSettingsClick: () -> Unit,
@@ -52,6 +53,7 @@ fun BrowseMangaSourceToolbar(
 
     SearchToolbar(
         navigateUp = navigateUp,
+        navigationIconContent = navigationIconContent,
         titleContent = { AppBarTitle(title) },
         searchQuery = searchQuery,
         onChangeSearchQuery = onSearchQueryChange,

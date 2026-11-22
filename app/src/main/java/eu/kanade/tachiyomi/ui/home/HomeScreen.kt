@@ -67,6 +67,7 @@ import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.domain.ui.model.NavBarLabelMode
 import eu.kanade.domain.ui.model.NavTab
+import eu.kanade.domain.ui.model.StandaloneHomeMode
 import eu.kanade.presentation.util.Screen
 import eu.kanade.presentation.util.isTabletUi
 import eu.kanade.tachiyomi.ui.browse.BrowseTab
@@ -117,6 +118,7 @@ object HomeScreen : Screen() {
 
     private val uiPreferences: UiPreferences by injectLazy()
     private val defaultTab = uiPreferences.startScreen().get().tab
+    private val standaloneHomeMode = uiPreferences.standaloneHomeMode().get()
 
     @Composable
     override fun Content() {
@@ -139,8 +141,17 @@ object HomeScreen : Screen() {
             NavTab.shownTabs(enabledTabs, tabOrder)
         }
         val hiddenTabs = NavTab.hidden(enabledTabs).map { it.tab }
-        // The start-screen tab may have been hidden; fall back to the first shown tab.
-        val homeTab = defaultTab.takeIf { it in shownTabs } ?: shownTabs.first()
+        val homeTab = if (StandaloneScope.isActive) {
+            val libraryTab = if (StandaloneScope.kind == StandaloneScope.KIND_MANGA) {
+                MangaLibraryTab
+            } else {
+                AnimeLibraryTab
+            }
+            if (standaloneHomeMode == StandaloneHomeMode.FEED) StandaloneFeedTab else libraryTab
+        } else {
+            // The start-screen tab may have been hidden; fall back to the first shown tab.
+            defaultTab.takeIf { it in shownTabs } ?: shownTabs.first()
+        }
         val floatingNavBar by uiPreferences.bottomNavFloating().collectAsState()
         val floatingNavBarAlpha by uiPreferences.bottomNavFloatingAlpha().collectAsState()
         val floatingNavBarBlur by uiPreferences.bottomNavFloatingBlur().collectAsState()

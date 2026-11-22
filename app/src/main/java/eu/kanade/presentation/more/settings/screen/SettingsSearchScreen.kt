@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
+import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.presentation.components.UpIcon
 import eu.kanade.presentation.more.settings.Preference
 import eu.kanade.presentation.more.settings.screen.player.PlayerSettingsAdvancedScreen
@@ -287,7 +288,7 @@ private fun SearchResult(
 
 @Composable
 @NonRestartableComposable
-private fun getIndex() = settingScreens
+private fun getIndex() = visibleSettingScreens()
     .map { screen ->
         SettingsData(
             title = stringResource(screen.getTitleRes()),
@@ -298,15 +299,18 @@ private fun getIndex() = settingScreens
 
 @Composable
 @NonRestartableComposable
-private fun getPlayerIndex() = playerSettingScreens
-    .map { screen ->
-        SettingsData(
-            title = stringResource(screen.getTitleRes()),
-            route = screen,
-            contents = screen.getPreferences(),
-            playerSettings = true,
-        )
-    }
+private fun getPlayerIndex(): List<SettingsData> {
+    if (StandaloneScope.appliesTo(StandaloneScope.KIND_MANGA)) return emptyList()
+    return playerSettingScreens
+        .map { screen ->
+            SettingsData(
+                title = stringResource(screen.getTitleRes()),
+                route = screen,
+                contents = screen.getPreferences(),
+                playerSettings = true,
+            )
+        }
+}
 
 private fun getLocalizedBreadcrumb(nodes: List<String>, isLtr: Boolean): String {
     return if (isLtr) {
@@ -328,17 +332,20 @@ private val playerSettingScreens = listOf(
     PlayerSettingsAdvancedScreen,
 )
 
-private val settingScreens = listOf(
-    SettingsAppearanceScreen,
-    SettingsLibraryScreen,
-    SettingsReaderScreen,
-    SettingsDownloadScreen,
-    SettingsTrackingScreen,
-    SettingsBrowseScreen,
-    SettingsDataScreen,
-    SettingsSecurityScreen,
-    SettingsAdvancedScreen,
-)
+private fun visibleSettingScreens(): List<SearchableSettings> = buildList {
+    add(SettingsAppearanceScreen)
+    add(SettingsDownloadScreen)
+    add(SettingsTrackingScreen)
+    add(SettingsDataScreen)
+    add(SettingsSecurityScreen)
+    if (!StandaloneScope.isActive) {
+        // Keep the search index in sync with SettingsMainScreen.
+        add(SettingsLibraryScreen)
+        add(SettingsReaderScreen)
+        add(SettingsBrowseScreen)
+        add(SettingsAdvancedScreen)
+    }
+}
 
 private data class SettingsData(
     val title: String,

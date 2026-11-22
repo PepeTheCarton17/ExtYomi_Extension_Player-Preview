@@ -252,14 +252,14 @@ object SettingsMainScreen : Screen() {
                 screen = AboutScreen,
             ),
         ).filterNot { item ->
-            // A standalone app exposes only the settings relevant to its content kind.
-            (
-                StandaloneScope.appliesTo(StandaloneScope.KIND_ANIME) &&
-                    item.screen === SettingsReaderScreen
-                ) ||
-                (
-                    StandaloneScope.appliesTo(StandaloneScope.KIND_MANGA) &&
-                        item.screen is PlayerSettingsScreen
-                    )
+            if (!StandaloneScope.isActive) return@filterNot false
+            // A standalone app has one source and one content kind: hide the sections that are
+            // only about choosing/controlling anime, manga or novels.
+            val screen = item.screen
+            screen === SettingsLibraryScreen ||
+                screen === SettingsReaderScreen ||
+                screen === SettingsBrowseScreen ||
+                screen === SettingsAdvancedScreen ||
+                screen is PlayerSettingsScreen
         }
 }

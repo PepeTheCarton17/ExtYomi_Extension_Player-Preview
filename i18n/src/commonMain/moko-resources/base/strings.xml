@@ -37,6 +37,9 @@
     <string name="label_extensions">Extensions</string>
     <string name="label_standalone_apps">Standalone apps</string>
     <string name="label_standalone_feed">Feed</string>
+    <string name="pref_standalone_home_mode">Start screen</string>
+    <string name="pref_standalone_home_mode_feed">Feed (catalogue)</string>
+    <string name="pref_standalone_home_mode_new_home">New Home (library)</string>
     <string name="standalone_apps_summary">Turn an installed extension into its own app</string>
     <string name="standalone_no_extensions">No installed extensions found</string>
     <string name="standalone_output_folder">Output folder</string>

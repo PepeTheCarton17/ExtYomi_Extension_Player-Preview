@@ -39,11 +39,13 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import com.hippo.unifile.UniFile
 import eu.kanade.core.util.ifAnimeSourcesLoaded
+import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.presentation.browse.RemoveEntryDialog
 import eu.kanade.presentation.browse.anime.BrowseAnimeSourceContent
 import eu.kanade.presentation.browse.anime.MissingSourceScreen
@@ -54,6 +56,7 @@ import eu.kanade.presentation.category.components.ChangeCategoryDialog
 import eu.kanade.presentation.entries.anime.DuplicateAnimeDialog
 import eu.kanade.presentation.util.AssistContentScreen
 import eu.kanade.presentation.util.Screen
+import eu.kanade.presentation.util.StandaloneSourceIcon
 import eu.kanade.tachiyomi.animesource.AnimeCatalogueSource
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.core.common.Constants
@@ -110,6 +113,13 @@ data class BrowseAnimeSourceScreen(
                 )
                 else -> navigator.pop()
             }
+        }
+
+        val isStandalone = StandaloneScope.isActive
+        val standaloneNavigationIcon: (@Composable () -> Unit)? = if (isStandalone) {
+            { StandaloneSourceIcon(modifier = Modifier.size(32.dp)) }
+        } else {
+            null
         }
 
         if (screenModel.source is StubAnimeSource) {
@@ -190,7 +200,8 @@ data class BrowseAnimeSourceScreen(
                         source = screenModel.source,
                         displayMode = screenModel.displayMode,
                         onDisplayModeChange = { screenModel.displayMode = it },
-                        navigateUp = navigateUp,
+                        navigateUp = if (isStandalone && state.toolbarQuery == null) null else navigateUp,
+                        navigationIconContent = standaloneNavigationIcon,
                         onWebViewClick = onWebViewClick,
                         onHelpClick = onHelpClick,
                         onSettingsClick = { navigator.push(AnimeSourcePreferencesScreen(sourceId)) },
