@@ -30,6 +30,7 @@ import eu.kanade.tachiyomi.ui.player.settings.AudioPreferences
 import eu.kanade.tachiyomi.ui.player.settings.DecoderPreferences
 import eu.kanade.tachiyomi.ui.player.settings.PlayerPreferences
 import eu.kanade.tachiyomi.ui.player.settings.SubtitlePreferences
+import eu.kanade.tachiyomi.util.system.DeviceCapabilities
 import `is`.xyz.mpv.BaseMPVView
 import `is`.xyz.mpv.KeyMapping
 import `is`.xyz.mpv.MPVLib
@@ -48,16 +49,6 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet) : BaseMPVView(c
     private val networkPreferences: NetworkPreferences by injectLazy()
 
     var isExiting = false
-
-    /**
-     * Windows Subsystem for Android exposes MediaCodec/OpenGL through a virtual GPU. Its H.264
-     * decoder cannot hand mpv a CPU-readable surface (setPortMode DynamicANWBuffer fails), and
-     * gpu-next/EGL emulation is unreliable there too. Software decoding is the safe path.
-     */
-    internal val isWindowsSubsystemForAndroid: Boolean
-        get() = Build.BRAND.equals("Windows", ignoreCase = true) ||
-            Build.MANUFACTURER.contains("Microsoft", ignoreCase = true) ||
-            Build.MODEL.contains("Subsystem for Android", ignoreCase = true)
 
     private fun getPropertyInt(property: String): Int? {
         return MPVLib.getPropertyInt(property) as Int?
@@ -122,18 +113,24 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet) : BaseMPVView(c
     var aid: Int by TrackDelegate("aid")
 
     override fun initOptions(vo: String) {
-        val softwareDecodeOnly = isWindowsSubsystemForAndroid
-        if (softwareDecodeOnly) {
-            logcat(LogPriority.INFO) { "WSA detected: forcing software decoding (hwdec=no, vo=gpu)" }
+        val isWsa = DeviceCapabilities.isWindowsSubsystemForAndroid
+        if (isWsa && !decoderPreferences.wsaPlayerDefaultsApplied().get()) {
+            // WSA's H.264 decoder cannot expose a DynamicANWBuffer to mpv. GPU-next renders well on
+            // its virtual GPU, but hardware decoding has to stay off. Apply once so the user sees
+            // (and can still change) these values in player settings.
+            decoderPreferences.gpuNext().set(true)
+            decoderPreferences.tryHWDecoding().set(false)
+            decoderPreferences.wsaPlayerDefaultsApplied().set(true)
+            logcat(LogPriority.INFO) { "WSA detected: enabling GPU-next and disabling hardware decoding" }
         }
 
-        setVo(if (!softwareDecodeOnly && decoderPreferences.gpuNext().get()) "gpu-next" else "gpu")
+        setVo(if (decoderPreferences.gpuNext().get()) "gpu-next" else "gpu")
         MPVLib.setPropertyBoolean("pause", true)
         MPVLib.setOptionString("profile", "fast")
         MPVLib.setOptionString(
             "hwdec",
             when {
-                softwareDecodeOnly -> "no"
+                isWsa -> Decoder.SW.value
                 decoderPreferences.tryHWDecoding().get() -> "auto"
                 else -> "no"
             },
@@ -144,7 +141,7 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet) : BaseMPVView(c
             Debanding.GPU -> MPVLib.setOptionString("deband", "yes")
         }
 
-        if (decoderPreferences.useYUV420P().get() && !softwareDecodeOnly) {
+        if (decoderPreferences.useYUV420P().get()) {
             MPVLib.setOptionString("vf", "format=yuv420p")
         }
         if (decoderPreferences.reduceTearing().get()) {

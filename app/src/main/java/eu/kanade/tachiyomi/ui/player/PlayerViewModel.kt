@@ -96,6 +96,7 @@ import eu.kanade.tachiyomi.util.lang.byteSize
 import eu.kanade.tachiyomi.util.lang.takeBytes
 import eu.kanade.tachiyomi.util.storage.DiskUtil
 import eu.kanade.tachiyomi.util.storage.cacheImageDir
+import eu.kanade.tachiyomi.util.system.DeviceCapabilities
 import eu.kanade.tachiyomi.util.system.toast
 import `is`.xyz.mpv.MPVLib
 import `is`.xyz.mpv.Utils
@@ -412,8 +413,8 @@ class PlayerViewModel @JvmOverloads constructor(
     }
 
     fun updateDecoder(decoder: Decoder) {
-        // WSA's MediaCodec cannot provide a CPU-readable surface; keep software decoding there.
-        val forcedSoftware = activity.player.isWindowsSubsystemForAndroid && decoder != Decoder.SW
+        // WSA's MediaCodec cannot provide a CPU-readable surface; keep hardware decoding off.
+        val forcedSoftware = DeviceCapabilities.isWindowsSubsystemForAndroid && decoder != Decoder.SW
         MPVLib.setPropertyString("hwdec", if (forcedSoftware) Decoder.SW.value else decoder.value)
     }
 

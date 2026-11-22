@@ -13,6 +13,9 @@ class DecoderPreferences(
     fun useYUV420P() = preferenceStore.getBoolean("use_yuv420p", true)
     fun reduceTearing() = preferenceStore.getBoolean("pref_reduce_tearing", false)
 
+    /** WSA-specific defaults are applied once, so the user can still change them later. */
+    fun wsaPlayerDefaultsApplied() = preferenceStore.getBoolean("wsa_player_defaults_applied", false)
+
     // Non-preferences
 
     fun brightnessFilter() = preferenceStore.getInt("pref_player_filter_brightness")
