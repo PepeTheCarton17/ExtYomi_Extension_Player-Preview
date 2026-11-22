@@ -8,13 +8,19 @@ añadirán después) y permite convertir una de ellas en una app aparte.
 
 El generador toma el APK instalado de ExtYomi —es decir, el fork completo— y produce una copia:
 
-- nuevo `packageName` derivado del paquete de la extensión y del `sourceId`;
-- nombre y icono de la extensión;
+- nuevo `packageName` derivado del paquete de la extensión, del `sourceId` y de la huella de la
+  clave de firma (así una regeneración no choca con una app antigua firmada por otra clave);
+- nombre y icono reales de la extensión (el manifiesto deja de usar el icono adaptativo para que
+  el bitmap reemplazado se vea también en Android 8+);
 - `assets/standalone_config.json` con `sourceId`, `kind`, paquete de la extensión, versión y huella
   de su certificado;
-- provider authorities reescritos para que la app generada pueda convivir con el generador;
+- nombres de componentes relativos expandidos antes de cambiar el package, para que sigan
+  apuntando a las clases del DEX;
+- provider authorities y nombres de permisos reescritos de forma determinista para que la app
+  generada pueda convivir con el generador;
 - firma con una clave propia creada en el Android Keystore del dispositivo;
-- salida únicamente en la carpeta SAF elegida por el usuario.
+- salida por defecto en `standalone/` dentro de la carpeta de almacenamiento ya configurada de
+  ExtYomi; el selector SAF sirve solo para cambiar esa carpeta.
 
 No se crea un módulo launcher ni un puente `OPEN_EXTENSION`. La app resultante es el fork, con la
 navegación limitada por la configuración embebida.

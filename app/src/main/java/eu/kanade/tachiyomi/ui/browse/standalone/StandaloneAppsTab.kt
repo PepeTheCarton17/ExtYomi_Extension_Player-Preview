@@ -4,14 +4,15 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.GetApp
 import androidx.compose.material3.Button
@@ -26,16 +27,22 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.drawable.toBitmap
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
+import com.hippo.unifile.UniFile
 import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.presentation.components.TabContent
-import eu.kanade.presentation.more.settings.widget.TextPreferenceWidget
+import eu.kanade.presentation.more.settings.widget.BasePreferenceWidget
+import tachiyomi.core.common.storage.displayablePath
+import tachiyomi.domain.storage.service.StorageManager
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.ScrollbarLazyColumn
 import tachiyomi.presentation.core.i18n.stringResource
+import tachiyomi.presentation.core.util.secondaryItemAlpha
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import tachiyomi.presentation.core.util.collectAsState as collectPreferenceAsState
@@ -46,7 +53,21 @@ fun Screen.standaloneAppsTab(): TabContent {
     val screenModel = rememberScreenModel { StandaloneAppsScreenModel() }
     val state by screenModel.state.collectAsState()
     val uiPreferences = remember { Injekt.get<UiPreferences>() }
-    val outputUri by uiPreferences.standaloneOutputUri().collectPreferenceAsState()
+    val configuredOutputUri by uiPreferences.standaloneOutputUri().collectPreferenceAsState()
+
+    // ExtYomi already has a storage root configured at install time, so just use its
+    // "standalone" subdirectory. The picker is only for changing that destination.
+    val defaultOutputUri = remember {
+        Injekt.get<StorageManager>()
+            .getStandaloneAppsDirectory()
+            ?.uri
+            ?.toString()
+            .orEmpty()
+    }
+    val outputUri = configuredOutputUri.ifBlank { defaultOutputUri }
+    val outputPath = remember(outputUri) {
+        UniFile.fromUri(context, outputUri)?.displayablePath.orEmpty()
+    }
 
     val folderPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree(),
@@ -76,12 +97,15 @@ fun Screen.standaloneAppsTab(): TabContent {
                         Spacer(Modifier.height(12.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Button(onClick = { folderPicker.launch(null) }) {
-                                Text(stringResource(MR.strings.standalone_choose_folder))
+                                Text(stringResource(MR.strings.standalone_change_folder))
                             }
-                            if (outputUri.isNotBlank()) {
+                            if (outputPath.isNotBlank()) {
                                 Spacer(Modifier.width(12.dp))
                                 Text(
-                                    text = stringResource(MR.strings.standalone_output_folder),
+                                    text = stringResource(
+                                        MR.strings.standalone_output_folder_value,
+                                        outputPath,
+                                    ),
                                     style = MaterialTheme.typography.bodySmall,
                                 )
                             }
@@ -135,11 +159,37 @@ fun Screen.standaloneAppsTab(): TabContent {
                     key = { index -> state.items[index].sourceId },
                 ) { index ->
                     val item = state.items[index]
-                    TextPreferenceWidget(
+                    val extensionIcon = item.icon
+                    BasePreferenceWidget(
                         modifier = Modifier.fillMaxWidth(),
                         title = item.name,
-                        subtitle = "${item.sourceName} • ${item.kind} • ${item.extensionVersionName}",
-                        icon = Icons.Outlined.GetApp,
+                        subcomponent = {
+                            Text(
+                                text = "${item.sourceName} • ${item.kind} • ${item.extensionVersionName}",
+                                modifier = Modifier
+                                    .padding(horizontal = 16.dp)
+                                    .secondaryItemAlpha(),
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 2,
+                            )
+                        },
+                        icon = {
+                            val bitmap = remember(extensionIcon) {
+                                extensionIcon?.toBitmap()?.asImageBitmap()
+                            }
+                            if (bitmap != null) {
+                                Image(
+                                    bitmap = bitmap,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(40.dp),
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Outlined.GetApp,
+                                    contentDescription = null,
+                                )
+                            }
+                        },
                         widget = {
                             IconButton(
                                 enabled = outputUri.isNotBlank() &&

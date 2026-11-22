@@ -41,6 +41,8 @@
     <string name="standalone_no_extensions">No installed extensions found</string>
     <string name="standalone_output_folder">Output folder</string>
     <string name="standalone_choose_folder">Choose folder</string>
+    <string name="standalone_change_folder">Change folder</string>
+    <string name="standalone_output_folder_value">Output: %1$s</string>
     <string name="standalone_create_app">Create app</string>
     <string name="standalone_generating">Generating %1$s…</string>
     <string name="standalone_generated">App generated: %1$s</string>

@@ -273,6 +273,8 @@
     <string name="standalone_no_extensions">No hay extensiones instaladas</string>
     <string name="standalone_output_folder">Carpeta de salida</string>
     <string name="standalone_choose_folder">Elegir carpeta</string>
+    <string name="standalone_change_folder">Cambiar carpeta</string>
+    <string name="standalone_output_folder_value">Salida: %1$s</string>
     <string name="standalone_create_app">Crear app</string>
     <string name="standalone_generating">Generando %1$s…</string>
     <string name="standalone_generated">App generada: %1$s</string>
