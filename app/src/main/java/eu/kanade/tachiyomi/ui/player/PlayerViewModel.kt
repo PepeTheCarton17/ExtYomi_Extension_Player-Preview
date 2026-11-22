@@ -412,7 +412,9 @@ class PlayerViewModel @JvmOverloads constructor(
     }
 
     fun updateDecoder(decoder: Decoder) {
-        MPVLib.setPropertyString("hwdec", decoder.value)
+        // WSA's MediaCodec cannot provide a CPU-readable surface; keep software decoding there.
+        val forcedSoftware = activity.player.isWindowsSubsystemForAndroid && decoder != Decoder.SW
+        MPVLib.setPropertyString("hwdec", if (forcedSoftware) Decoder.SW.value else decoder.value)
     }
 
     val getTrackLanguage: (Int) -> String = {

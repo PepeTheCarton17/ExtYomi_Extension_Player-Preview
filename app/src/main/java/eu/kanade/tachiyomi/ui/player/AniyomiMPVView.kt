@@ -49,6 +49,16 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet) : BaseMPVView(c
 
     var isExiting = false
 
+    /**
+     * Windows Subsystem for Android exposes MediaCodec/OpenGL through a virtual GPU. Its H.264
+     * decoder cannot hand mpv a CPU-readable surface (setPortMode DynamicANWBuffer fails), and
+     * gpu-next/EGL emulation is unreliable there too. Software decoding is the safe path.
+     */
+    internal val isWindowsSubsystemForAndroid: Boolean
+        get() = Build.BRAND.equals("Windows", ignoreCase = true) ||
+            Build.MANUFACTURER.contains("Microsoft", ignoreCase = true) ||
+            Build.MODEL.contains("Subsystem for Android", ignoreCase = true)
+
     private fun getPropertyInt(property: String): Int? {
         return MPVLib.getPropertyInt(property) as Int?
     }
@@ -112,17 +122,29 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet) : BaseMPVView(c
     var aid: Int by TrackDelegate("aid")
 
     override fun initOptions(vo: String) {
-        setVo(if (decoderPreferences.gpuNext().get()) "gpu-next" else "gpu")
+        val softwareDecodeOnly = isWindowsSubsystemForAndroid
+        if (softwareDecodeOnly) {
+            logcat(LogPriority.INFO) { "WSA detected: forcing software decoding (hwdec=no, vo=gpu)" }
+        }
+
+        setVo(if (!softwareDecodeOnly && decoderPreferences.gpuNext().get()) "gpu-next" else "gpu")
         MPVLib.setPropertyBoolean("pause", true)
         MPVLib.setOptionString("profile", "fast")
-        MPVLib.setOptionString("hwdec", if (decoderPreferences.tryHWDecoding().get()) "auto" else "no")
+        MPVLib.setOptionString(
+            "hwdec",
+            when {
+                softwareDecodeOnly -> "no"
+                decoderPreferences.tryHWDecoding().get() -> "auto"
+                else -> "no"
+            },
+        )
         when (decoderPreferences.videoDebanding().get()) {
             Debanding.None -> {}
             Debanding.CPU -> MPVLib.setOptionString("vf", "gradfun=radius=12")
             Debanding.GPU -> MPVLib.setOptionString("deband", "yes")
         }
 
-        if (decoderPreferences.useYUV420P().get()) {
+        if (decoderPreferences.useYUV420P().get() && !softwareDecodeOnly) {
             MPVLib.setOptionString("vf", "format=yuv420p")
         }
         if (decoderPreferences.reduceTearing().get()) {
