@@ -237,11 +237,8 @@ class PlayerActivity : BaseActivity() {
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
 
-        setupPlayerMPV()
-        setupPlayerAudio()
-        setupMediaSession()
-        setupPlayerOrientation()
-
+        // Install this before mpv initializes so a native-load failure is visible instead of
+        // closing the activity silently.
         Thread.setDefaultUncaughtExceptionHandler { _, throwable ->
             runOnUiThread {
                 toast(throwable.message)
@@ -249,6 +246,11 @@ class PlayerActivity : BaseActivity() {
             logcat(LogPriority.ERROR, throwable)
             finish()
         }
+
+        setupPlayerMPV()
+        setupPlayerAudio()
+        setupMediaSession()
+        setupPlayerOrientation()
 
         viewModel.eventFlow
             .onEach { event ->

@@ -291,6 +291,7 @@ object StandaloneAppGenerator {
         val iconNames = listOf(
             "ic_launcher",
             "ic_launcher_round",
+            "ic_launcher_foreground",
             "ic_launcher_monochrome",
             "ic_launcher_gray",
             "ic_launcher_gray_round",

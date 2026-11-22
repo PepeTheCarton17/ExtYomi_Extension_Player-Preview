@@ -8,20 +8,24 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.graphics.drawable.toBitmap
+import eu.kanade.domain.ui.StandaloneScope
 
 /**
  * Icon shown in place of the back arrow in a generated standalone app.
  *
- * The launcher icon of the generated APK is the icon of the extension it was built for, so that is
- * also the icon the source catalogue should display.
+ * Prefer the icon of the extension the app was built for. Falling back to our own application icon
+ * is not reliable: the launcher may have selected an activity alias with a different icon.
  */
 @Composable
 fun StandaloneSourceIcon(modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val painter = remember(context.packageName) {
-        runCatching { context.packageManager.getApplicationIcon(context.packageName) }
+    val extensionPkg = StandaloneScope.extensionPkg
+    val painter = remember(context.packageName, extensionPkg) {
+        val drawable = runCatching { context.packageManager.getApplicationIcon(extensionPkg) }
             .getOrNull()
-            ?.let { BitmapPainter(it.toBitmap().asImageBitmap()) }
+            ?: runCatching { context.packageManager.getApplicationIcon(context.packageName) }
+                .getOrNull()
+        drawable?.let { BitmapPainter(it.toBitmap().asImageBitmap()) }
     }
     if (painter != null) {
         Image(painter = painter, contentDescription = null, modifier = modifier)

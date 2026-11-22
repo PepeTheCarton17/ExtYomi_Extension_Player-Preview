@@ -32,6 +32,10 @@ object StandaloneScope {
     val kind: String
         get() = preferences.standaloneKind().get()
 
+    /** Package of the extension this standalone app was built for. */
+    val extensionPkg: String
+        get() = preferences.standaloneExtensionPkg().get()
+
     val isActive: Boolean
         get() = sourceId >= 0 && kind.isNotEmpty()
 
@@ -56,6 +60,7 @@ object StandaloneScope {
 
         // The standalone app has its own preferences, so pre-trust the extension it was built for.
         val extensionPkg = config.optString("extensionPkg", "")
+        preferences.standaloneExtensionPkg().set(extensionPkg)
         val versionCode = config.optLong("extensionVersionCode", -1L)
         val signatureHash = config.optString("extensionSignatureHash", "")
         if (extensionPkg.isEmpty() || versionCode < 0 || signatureHash.isEmpty()) return

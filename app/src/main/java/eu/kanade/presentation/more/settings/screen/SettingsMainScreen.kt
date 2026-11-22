@@ -258,7 +258,6 @@ object SettingsMainScreen : Screen() {
             // manga apps need the reader. Only the other kind's section is irrelevant.
             screen === SettingsLibraryScreen ||
                 screen === SettingsBrowseScreen ||
-                screen === SettingsAdvancedScreen ||
                 (
                     StandaloneScope.appliesTo(StandaloneScope.KIND_ANIME) &&
                         screen === SettingsReaderScreen
