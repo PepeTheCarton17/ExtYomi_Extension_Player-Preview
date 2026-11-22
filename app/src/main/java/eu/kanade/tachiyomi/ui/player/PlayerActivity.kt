@@ -437,11 +437,17 @@ class PlayerActivity : BaseActivity() {
         MPVLib.setOptionString("sub-ass-force-margins", "yes")
         MPVLib.setOptionString("sub-use-margins", "yes")
 
-        player.initialize(
-            configDir = mpvDir.filePath!!,
-            cacheDir = applicationContext.cacheDir.path,
-            logLvl = logLevel,
-        )
+        logcat(LogPriority.INFO) { "Initializing mpv for $packageName in ${mpvDir.filePath}" }
+        try {
+            player.initialize(
+                configDir = mpvDir.filePath!!,
+                cacheDir = applicationContext.cacheDir.path,
+                logLvl = logLevel,
+            )
+        } catch (e: Throwable) {
+            logcat(LogPriority.ERROR, e) { "mpv initialization failed" }
+            throw e
+        }
         MPVLib.addLogObserver(playerObserver)
         MPVLib.addObserver(playerObserver)
     }
@@ -1090,6 +1096,12 @@ class PlayerActivity : BaseActivity() {
             "$option=\"$value\""
         }
 
+        val videoUri = video.videoUrl.toUri()
+        logcat(LogPriority.INFO) {
+            "Loading video host=${videoUri.host} scheme=${videoUri.scheme} " +
+                "options=${videoOptions.length}"
+        }
+
         if (torrentPreferences.torrServerEnable().get() &&
             (
                 video.videoUrl.startsWith(torrentServerApi.hostUrl) ||
@@ -1192,6 +1204,7 @@ class PlayerActivity : BaseActivity() {
             it.key + ": " + it.value.replace(",", "\\,")
         }.joinToString(",")
 
+        logcat(LogPriority.DEBUG) { "mpv http header names: ${headers.keys.joinToString()}" }
         MPVLib.setOptionString("http-header-fields", httpHeaderString)
 
         // need to fix the cache

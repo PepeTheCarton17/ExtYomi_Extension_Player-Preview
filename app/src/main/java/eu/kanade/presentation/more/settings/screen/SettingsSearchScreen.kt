@@ -341,9 +341,12 @@ private fun visibleSettingScreens(): List<SearchableSettings> = buildList {
     if (!StandaloneScope.isActive) {
         // Keep the search index in sync with SettingsMainScreen.
         add(SettingsLibraryScreen)
-        add(SettingsReaderScreen)
         add(SettingsBrowseScreen)
         add(SettingsAdvancedScreen)
+    }
+    if (!StandaloneScope.appliesTo(StandaloneScope.KIND_ANIME)) {
+        // Anime apps use the player instead, which is indexed by getPlayerIndex().
+        add(SettingsReaderScreen)
     }
 }
 

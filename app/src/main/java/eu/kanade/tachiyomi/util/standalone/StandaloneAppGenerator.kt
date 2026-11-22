@@ -80,6 +80,12 @@ object StandaloneAppGenerator {
             // New identity. setPackageName updates both the manifest and the resource table.
             module.setPackageName(newPackage)
             manifest.setApplicationLabel(item.name)
+
+            // AGP page-aligns native libraries for direct loading from the APK. Re-zipping the
+            // package cannot be assumed to preserve that alignment, so let Android extract them
+            // instead; mpv's libraries must load reliably in the generated app.
+            module.setExtractNativeLibs(true)
+
             pointLauncherIconAtReplacedBitmap(manifest, module)
 
             // Several providers come from libraries and use fixed or package-derived authorities.
@@ -188,6 +194,22 @@ object StandaloneAppGenerator {
                 )
             }
 
+        // Runtime code derives the FileProvider authority from context.packageName. Make sure the
+        // rewritten manifest uses exactly that value, even if the placeholder was not expanded.
+        manifest.elementsNamed(AndroidManifest.TAG_provider)
+            .firstOrNull { provider ->
+                provider.searchAttributeByResourceId(AndroidManifest.ID_name)
+                    ?.valueAsString == "androidx.core.content.FileProvider"
+            }
+            ?.let { provider ->
+                val authorities = provider.searchAttributeByResourceId(AndroidManifest.ID_authorities)
+                    ?: provider.getOrCreateAndroidAttribute(
+                        AndroidManifest.NAME_authorities,
+                        AndroidManifest.ID_authorities,
+                    )
+                authorities.setValueAsString("$newPackage.provider")
+            }
+
         listOf(AndroidManifest.TAG_permission, AndroidManifest.TAG_uses_permission)
             .flatMap { tag -> manifest.elementsNamed(tag) }
             .forEach { element ->
@@ -263,20 +285,54 @@ object StandaloneAppGenerator {
 
     private fun replaceLauncherIcons(module: ApkModule, drawable: Drawable) {
         val iconBytes = drawable.toPngBytes()
-        module.inputSources.toList().forEach { source: InputSource ->
-            val alias = source.alias
-            val fileName = alias.substringAfterLast('/')
-            if (
-                alias.startsWith("res/mipmap-") &&
-                fileName.startsWith("ic_launcher") &&
-                fileName.endsWith(".png")
-            ) {
-                val replacement = ByteInputSource(iconBytes, alias)
+
+        // Release builds shrink/obfuscate resource paths to values like "res/-B.png", so matching
+        // on "res/mipmap-" never finds anything. Resolve the real APK paths through resources.arsc
+        // instead and replace every density backed by these logical launcher icons.
+        val iconNames = listOf(
+            "ic_launcher",
+            "ic_launcher_round",
+            "ic_launcher_monochrome",
+            "ic_launcher_gray",
+            "ic_launcher_gray_round",
+            "ic_launcher_chilling",
+            "ic_launcher_chilling_round",
+            "ic_launcher_invested",
+            "ic_launcher_invested_round",
+            "ic_launcher_nyaa",
+            "ic_launcher_nyaa_round",
+            "ic_launcher_radiactive",
+            "ic_launcher_radiactive_round",
+            "ic_launcher_bye_kitty",
+            "ic_launcher_bye_kitty_round",
+            "ic_launcher_barry_allen",
+            "ic_launcher_barry_allen_round",
+            "ic_launcher_stylish_paws",
+            "ic_launcher_stylish_paws_round",
+            "ic_launcher_happy",
+            "ic_launcher_happy_round",
+            "ic_launcher_stretch",
+            "ic_launcher_stretch_round",
+            "ic_launcher_napping",
+            "ic_launcher_napping_round",
+        )
+        val replacedPaths = mutableSetOf<String>()
+        iconNames.forEach { name ->
+            val resId = module.tableBlock.resolveResourceId(null, "mipmap", name)
+            if (resId == 0) return@forEach
+            module.listResFiles(resId, null).forEach { resFile ->
+                val path = resFile.filePath
+                if (!path.endsWith(".png", ignoreCase = true) || !replacedPaths.add(path)) {
+                    return@forEach
+                }
+                val source = module.getInputSource(path) ?: return@forEach
+                val replacement = ByteInputSource(iconBytes, path)
                 replacement.copyAttributes(source)
-                module.removeInputSource(alias)
+                module.removeInputSource(path)
                 module.add(replacement)
             }
         }
+        require(replacedPaths.isNotEmpty()) { "No launcher icon PNG was replaced" }
     }
 
     private fun Drawable.toPngBytes(size: Int = 192): ByteArray {
