@@ -352,6 +352,7 @@ private fun SectionTitle(title: String) {
     Spacer(Modifier.height(8.dp))
 }
 
+@Composable
 private fun androidx.compose.foundation.lazy.LazyListScope.feedSection(
     enabled: Boolean,
     title: String,
