@@ -4,16 +4,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.TabOptions
-import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.presentation.util.Tab
-import eu.kanade.tachiyomi.ui.browse.anime.source.browse.BrowseAnimeSourceScreen
-import eu.kanade.tachiyomi.ui.browse.manga.source.browse.BrowseMangaSourceScreen
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
 
-/** Simple feed for a generated standalone app: the catalogue of its single source. */
+/** Home feed of a generated standalone app, scoped to its single extension. */
 data object StandaloneFeedTab : Tab {
 
     override val options: TabOptions
@@ -29,11 +27,7 @@ data object StandaloneFeedTab : Tab {
 
     @Composable
     override fun Content() {
-        val sourceId = StandaloneScope.sourceId
-        if (StandaloneScope.appliesTo(StandaloneScope.KIND_MANGA)) {
-            BrowseMangaSourceScreen(sourceId, null).Content()
-        } else {
-            BrowseAnimeSourceScreen(sourceId, null).Content()
-        }
+        val screenModel = rememberScreenModel { StandaloneFeedScreenModel() }
+        StandaloneHomeFeedScreen(screenModel)
     }
 }

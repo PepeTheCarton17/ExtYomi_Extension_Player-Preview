@@ -35,8 +35,15 @@ Al arrancar, `StandaloneScope.initializeFromAssets()` lee la configuración y:
 
 - marca la extensión como de confianza en el almacenamiento privado de la nueva app;
 - fija el `sourceId` y el `kind` (anime o manga);
-- Home muestra solo **Feed** (catálogo de esa fuente), **Biblioteca** y **Más**;
+- Home muestra solo **Inicio**, **Biblioteca** y **Más**;
 - el catálogo sustituye la flecha de retroceso por el icono de la extensión;
+- **Inicio** es un Home con estructura propia, inspirado en el NEW HOME de Animetail: barra superior,
+  chips de tipo/formato, carrusel destacado con avance automático y secciones «Continuar viendo y
+  leyendo», «Recomendados para ti» y «Populares ahora». Los títulos y las carátulas vienen de la API
+  pública de AniList (sin token); el diálogo de ajustes permite ocultar secciones, cambiar el número
+  de elementos y decidir si se muestran solo títulos presentes en la fuente. Para comprobar la
+  disponibilidad se consulta el catálogo de la extensión en segundo plano, sin insertar nada en la
+  biblioteca y sin sustituir las carátulas de la API;
 - Biblioteca e Historial se filtran por ese `sourceId`;
 - Ajustes → Apariencia incluye «Pantalla de inicio» para elegir entre **Feed (catálogo)** y
   **New Home (biblioteca)**; se ocultan los ajustes de anime/manga/novelas y el selector de icono,
