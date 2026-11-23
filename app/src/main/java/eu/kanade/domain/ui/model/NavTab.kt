@@ -5,6 +5,7 @@ import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.CollectionsBookmark
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -14,6 +15,7 @@ import eu.kanade.presentation.util.Tab
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.ui.browse.BrowseTab
 import eu.kanade.tachiyomi.ui.history.HistoriesTab
+import eu.kanade.tachiyomi.ui.home.HomeFeedTab
 import eu.kanade.tachiyomi.ui.library.anime.AnimeLibraryTab
 import eu.kanade.tachiyomi.ui.library.manga.MangaLibraryTab
 import eu.kanade.tachiyomi.ui.library.manga.NovelLibraryTab
@@ -31,6 +33,7 @@ enum class NavTab(
     val prefKey: String,
     val titleRes: StringResource,
 ) {
+    Home(HomeFeedTab, "home", MR.strings.label_home),
     Anime(AnimeLibraryTab, "anime", AYMR.strings.label_anime_library),
     Manga(MangaLibraryTab, "manga", AYMR.strings.label_manga_library),
     Updates(UpdatesTab, "updates", MR.strings.label_recent_updates),
@@ -42,6 +45,7 @@ enum class NavTab(
     val icon: ImageVector
         @Composable
         get() = when (this) {
+            Home -> Icons.Outlined.Home
             Anime -> Icons.Outlined.VideoLibrary
             Manga -> Icons.Outlined.CollectionsBookmark
             Updates -> ImageVector.vectorResource(id = R.drawable.ic_updates_outline_24dp)
@@ -52,7 +56,13 @@ enum class NavTab(
 
     companion object {
         // Matches the previous default (history is moved into the More tab).
-        val DEFAULT: Set<String> = setOf(Anime.prefKey, Manga.prefKey, Updates.prefKey, Browse.prefKey)
+        val DEFAULT: Set<String> = setOf(
+            Home.prefKey,
+            Anime.prefKey,
+            Manga.prefKey,
+            Updates.prefKey,
+            Browse.prefKey,
+        )
 
         /**
          * All tabs sorted by the user's saved [order] (a comma-separated list of prefKeys). Tabs
@@ -60,7 +70,9 @@ enum class NavTab(
          */
         fun ordered(order: String): List<NavTab> {
             val keys = order.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-            return entries.sortedBy { keys.indexOf(it.prefKey).let { i -> if (i < 0) Int.MAX_VALUE else i } }
+            // Home is always the first tab, like Animetail's house icon.
+            return listOf(Home) + entries.filter { it != Home }
+                .sortedBy { keys.indexOf(it.prefKey).let { i -> if (i < 0) Int.MAX_VALUE else i } }
         }
 
         /** Tabs shown in the bottom bar, in the user's [order], for the [enabled] set (More is always last). */

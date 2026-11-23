@@ -201,10 +201,8 @@ object SettingsAppearanceScreen : SearchableSettings {
                                 .associateWith { stringResource(it.titleRes) }
                                 .toImmutableMap(),
                             title = stringResource(MR.strings.pref_standalone_home_mode),
-                            onValueChanged = {
-                                context.toast(MR.strings.requires_app_restart)
-                                true
-                            },
+                            // The Home tab now reacts to this preference immediately.
+                            onValueChanged = { true },
                         ),
                     )
                 } else {
@@ -215,10 +213,8 @@ object SettingsAppearanceScreen : SearchableSettings {
                                 .associateWith { stringResource(it.titleRes) }
                                 .toImmutableMap(),
                             title = stringResource(AYMR.strings.pref_start_screen),
-                            onValueChanged = {
-                                context.toast(MR.strings.requires_app_restart)
-                                true
-                            },
+                            // The Home tab now reacts to this preference immediately.
+                            onValueChanged = { true },
                         ),
                     )
                 }

@@ -51,28 +51,41 @@ class GetApplicationRelease(
         versionName: String,
         versionTag: String,
     ): Boolean {
-        // Removes prefixes like "r" or "v"
-        val newVersion = versionTag.replace("[^\\d.]".toRegex(), "")
-        return if (isPreview) {
-            // Preview builds: based on releases in "tachiyomiorg/tachiyomi-preview" repo
-            // tagged as something like "r1234"
-            newVersion.toInt() > commitCount
-        } else {
-            // Release builds: based on releases in "tachiyomiorg/tachiyomi" repo
-            // tagged as something like "v0.1.2"
-            val oldVersion = versionName.replace("[^\\d.]".toRegex(), "")
-
-            val newSemVer = newVersion.split(".").map { it.toInt() }
-            val oldSemVer = oldVersion.split(".").map { it.toInt() }
-
-            oldSemVer.mapIndexed { index, i ->
-                if (newSemVer[index] > i) {
-                    return true
-                }
-            }
-
-            false
+        // Legacy commit-count tags (r1234) are still understood for older previews.
+        commitTagRegex.matchEntire(versionTag.trim())?.let { match ->
+            val newCount = match.groupValues[1].toIntOrNull() ?: return false
+            return isPreview && newCount > commitCount
         }
+
+        // ExtYomi publishes semver tags: preview-v0.1.9 and v0.1.9. Compare numerically so
+        // "0.1.10" is newer than "0.1.9" (a plain String comparison would get that wrong).
+        val newVersion = parseVersion(versionTag) ?: return false
+        val currentVersion = parseVersion(versionName) ?: return false
+        return compareVersion(newVersion, currentVersion) > 0
+    }
+
+    private fun parseVersion(value: String): List<Int>? {
+        val core = value.trim()
+            .removePrefix("preview-v")
+            .removePrefix("v")
+            .substringBefore("-")
+        if (core.isEmpty()) return null
+        val parts = core.split(".").map { it.toIntOrNull() ?: return null }
+        return parts
+    }
+
+    private fun compareVersion(a: List<Int>, b: List<Int>): Int {
+        val size = maxOf(a.size, b.size)
+        for (index in 0 until size) {
+            val left = a.getOrElse(index) { 0 }
+            val right = b.getOrElse(index) { 0 }
+            if (left != right) return left.compareTo(right)
+        }
+        return 0
+    }
+
+    companion object {
+        private val commitTagRegex = Regex("""r(\d+)""")
     }
 
     data class Arguments(

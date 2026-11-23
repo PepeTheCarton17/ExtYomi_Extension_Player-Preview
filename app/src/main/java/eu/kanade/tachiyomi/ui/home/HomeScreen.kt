@@ -118,29 +118,37 @@ object HomeScreen : Screen() {
     private const val TAB_NAVIGATOR_KEY = "HomeTabs"
 
     private val uiPreferences: UiPreferences by injectLazy()
-    private val defaultTab = uiPreferences.startScreen().get().tab
-    private val standaloneHomeMode = uiPreferences.standaloneHomeMode().get()
 
     @Composable
     override fun Content() {
         val enabledTabs by uiPreferences.bottomNavTabs().collectAsState()
         val tabOrder by uiPreferences.bottomNavOrder().collectAsState()
+        val standaloneHomeMode by uiPreferences.standaloneHomeMode().collectAsState()
+        val startScreen by uiPreferences.startScreen().collectAsState()
+        val defaultTab = startScreen.tab
+        // Existing installs do not have "home" in their saved set; the house tab is always shown.
+        val effectiveEnabledTabs = if (StandaloneScope.isActive) {
+            enabledTabs
+        } else {
+            enabledTabs + NavTab.Home.prefKey
+        }
         val standaloneLibraryTab = when (StandaloneScope.kind) {
             StandaloneScope.KIND_MANGA -> MangaLibraryTab
             StandaloneScope.KIND_NOVEL -> NovelLibraryTab
             else -> AnimeLibraryTab
         }
         val shownTabs = if (StandaloneScope.isActive) {
-            // A standalone app keeps only its feed, library and settings.
+            // Home (Animetail-style feed), its source catalogue, library and settings.
             buildList {
                 add(StandaloneFeedTab)
+                add(StandaloneCatalogueTab)
                 add(standaloneLibraryTab)
                 add(MoreTab)
             }
         } else {
-            NavTab.shownTabs(enabledTabs, tabOrder)
+            NavTab.shownTabs(effectiveEnabledTabs, tabOrder)
         }
-        val hiddenTabs = NavTab.hidden(enabledTabs)
+        val hiddenTabs = NavTab.hidden(effectiveEnabledTabs)
             .filter { navTab ->
                 // A standalone app must not offer navigation into the other content kinds.
                 when {
@@ -155,7 +163,13 @@ object HomeScreen : Screen() {
             }
             .map { it.tab }
         val homeTab = if (StandaloneScope.isActive) {
-            if (standaloneHomeMode == StandaloneHomeMode.FEED) StandaloneFeedTab else standaloneLibraryTab
+            // FEED is the single source's catalogue; NEW_HOME is the Animetail-style feed on the
+            // house icon. The library is never used as the feed.
+            if (standaloneHomeMode == StandaloneHomeMode.FEED) {
+                StandaloneCatalogueTab
+            } else {
+                StandaloneFeedTab
+            }
         } else {
             // The start-screen tab may have been hidden; fall back to the first shown tab.
             defaultTab.takeIf { it in shownTabs } ?: shownTabs.first()
@@ -174,6 +188,13 @@ object HomeScreen : Screen() {
             tab = homeTab,
             key = TAB_NAVIGATOR_KEY,
         ) { tabNavigator ->
+            // The start-screen preference is now live: switching it moves the tab navigator
+            // immediately instead of only taking effect after a restart.
+            LaunchedEffect(homeTab) {
+                if (tabNavigator.current != homeTab) {
+                    tabNavigator.current = homeTab
+                }
+            }
             // Provide usable navigator to content screen
             CompositionLocalProvider(LocalNavigator provides navigator) {
                 Scaffold(
@@ -361,6 +382,7 @@ object HomeScreen : Screen() {
                 launch {
                     openTabEvent.receiveAsFlow().collectLatest {
                         tabNavigator.current = when (it) {
+                            is Tab.Home -> if (StandaloneScope.isActive) StandaloneFeedTab else HomeFeedTab
                             is Tab.AnimeLib -> AnimeLibraryTab
                             is Tab.Library -> MangaLibraryTab
                             is Tab.Updates -> UpdatesTab
@@ -607,6 +629,7 @@ object HomeScreen : Screen() {
     }
 
     sealed interface Tab {
+        data object Home : Tab
         data class AnimeLib(val animeIdToOpen: Long? = null) : Tab
         data class Library(val mangaIdToOpen: Long? = null) : Tab
         data object Updates : Tab

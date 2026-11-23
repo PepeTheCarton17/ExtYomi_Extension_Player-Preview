@@ -94,6 +94,8 @@ private fun StandaloneFeedScreenModel.FeedItem.matches(format: FeedFormat): Bool
 fun StandaloneHomeFeedScreen(
     screenModel: StandaloneFeedScreenModel,
     modifier: Modifier = Modifier,
+    requestSettings: Boolean = false,
+    onSettingsHandled: () -> Unit = {},
 ) {
     val state by screenModel.state.collectAsState()
     val navigator = LocalNavigator.currentOrThrow
@@ -101,6 +103,14 @@ fun StandaloneHomeFeedScreen(
     val scope = rememberCoroutineScope()
     var selectedFormat by remember { mutableStateOf(FeedFormat.ALL) }
     var showSettings by remember { mutableStateOf(false) }
+
+    // Re-selecting the Home tab opens the feed settings, as in Animetail.
+    LaunchedEffect(requestSettings) {
+        if (requestSettings) {
+            showSettings = true
+            onSettingsHandled()
+        }
+    }
 
     val animeScope = StandaloneScope.appliesTo(StandaloneScope.KIND_ANIME)
     val mangaScope = StandaloneScope.appliesTo(StandaloneScope.KIND_MANGA) ||

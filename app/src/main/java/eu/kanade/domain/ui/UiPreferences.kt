@@ -11,6 +11,8 @@ import eu.kanade.domain.ui.model.TabletUiMode
 import eu.kanade.domain.ui.model.ThemeMode
 import eu.kanade.tachiyomi.util.system.DeviceUtil
 import eu.kanade.tachiyomi.util.system.isDynamicColorAvailable
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
 import tachiyomi.core.common.preference.PreferenceStore
 import tachiyomi.core.common.preference.getEnum
 import java.time.format.DateTimeFormatter
@@ -59,6 +61,17 @@ class UiPreferences(
 
     // SAF tree where generated standalone APKs are written.
     fun standaloneOutputUri() = preferenceStore.getString("standalone_output_uri", "")
+
+    // Registry of generated APKs, so they can be installed/updated/opened from the same tab.
+    fun standaloneApps() = preferenceStore.getObject(
+        "standalone_apps",
+        emptyList<GeneratedStandaloneApp>(),
+        serializer = { json.encodeToString(generatedAppsSerializer, it) },
+        deserializer = { json.decodeFromString(generatedAppsSerializer, it) },
+    )
+
+    private val generatedAppsSerializer = ListSerializer(GeneratedStandaloneApp.serializer())
+    private val json = Json { ignoreUnknownKeys = true }
 
     // Order of the bottom nav tabs, as a comma-separated list of NavTab prefKeys. Empty = enum order.
     fun bottomNavOrder() = preferenceStore.getString("bottom_nav_order", "")

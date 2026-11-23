@@ -38,10 +38,14 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
     private val animeSourceManager: AnimeSourceManager = Injekt.get()
     private val mangaSourceManager: MangaSourceManager = Injekt.get()
 
-    private val isAnimeScope = StandaloneScope.appliesTo(StandaloneScope.KIND_ANIME)
-    private val isMangaScope = StandaloneScope.appliesTo(StandaloneScope.KIND_MANGA)
+    private val isStandalone = StandaloneScope.isActive
+
+    // In the generator (no standalone config) the feed is global: show both anime and manga.
+    private val isAnimeScope = !isStandalone || StandaloneScope.appliesTo(StandaloneScope.KIND_ANIME)
     private val isNovelScope = StandaloneScope.appliesTo(StandaloneScope.KIND_NOVEL)
-    private val isMangaContent = isMangaScope || isNovelScope
+    private val isMangaContent = !isStandalone ||
+        StandaloneScope.appliesTo(StandaloneScope.KIND_MANGA) ||
+        isNovelScope
     private val sourceId = StandaloneScope.sourceId
 
     init {
@@ -128,7 +132,7 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
             if (isAnimeScope) {
                 getAnimeHistory.subscribe("")
                     .first()
-                    .filter { it.coverData.sourceId == sourceId }
+                    .filter { !isStandalone || it.coverData.sourceId == sourceId }
                     .take(8)
                     .forEach { history ->
                         add(
@@ -148,7 +152,9 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
             if (isMangaContent) {
                 getMangaHistory.subscribe("")
                     .first()
-                    .filter { it.coverData.sourceId == sourceId && it.isNovel == isNovelScope }
+                    .filter {
+                        !isStandalone || (it.coverData.sourceId == sourceId && it.isNovel == isNovelScope)
+                    }
                     .take(8)
                     .forEach { history ->
                         add(
@@ -173,7 +179,8 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
      * are not hit by dozens of parallel catalogue requests, and never writes to the database.
      */
     private suspend fun verifyAvailability(items: List<FeedItem>) {
-        if (items.isEmpty()) return
+        // A global feed has no single bundled source to check against.
+        if (items.isEmpty() || !isStandalone) return
         val unique = items.distinctBy { normalized(it.title) to it.isAnime }
         val results = HashMap<Pair<String, Boolean>, Boolean>()
         val semaphore = Semaphore(4)
