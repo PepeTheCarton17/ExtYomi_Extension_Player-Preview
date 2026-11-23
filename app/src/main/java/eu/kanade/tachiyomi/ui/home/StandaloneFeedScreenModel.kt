@@ -3,11 +3,19 @@ package eu.kanade.tachiyomi.ui.home
 import androidx.compose.runtime.Immutable
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
+import eu.kanade.domain.entries.anime.model.toDomainAnime
+import eu.kanade.domain.entries.manga.model.toDomainManga
 import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.tachiyomi.animesource.AnimeCatalogueSource
+import eu.kanade.tachiyomi.animesource.model.AnimeFilter
+import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
+import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.data.home.HomeFeedDataSource
 import eu.kanade.tachiyomi.data.home.HomeFeedMedia
 import eu.kanade.tachiyomi.source.CatalogueSource
+import eu.kanade.tachiyomi.source.model.Filter
+import eu.kanade.tachiyomi.source.model.FilterList
+import eu.kanade.tachiyomi.source.model.SManga
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -16,8 +24,12 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeout
+import logcat.LogPriority
 import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.lang.withIOContext
+import tachiyomi.core.common.util.system.logcat
+import tachiyomi.domain.entries.anime.interactor.NetworkToLocalAnime
+import tachiyomi.domain.entries.manga.interactor.NetworkToLocalManga
 import tachiyomi.domain.history.anime.interactor.GetAnimeHistory
 import tachiyomi.domain.history.manga.interactor.GetMangaHistory
 import tachiyomi.domain.source.anime.service.AnimeSourceManager
@@ -26,9 +38,12 @@ import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
 /**
- * Home feed for a generated standalone app. Titles come from the public AniList feed; the local
- * catalogue is only queried to check whether a title exists in the single bundled source. Nothing
- * is inserted into the local library and the cover URLs from the API are never replaced.
+ * Feed for the Animetail-style Home.
+ *
+ * In a generated standalone the cards are entries of the single bundled extension: the public
+ * feed is only a source of suggestions, and a suggestion is shown only when its normalised title
+ * matches an entry of the extension exactly. In the generator (no standalone scope) the classic
+ * global feed is kept unchanged.
  */
 class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.State>(State()) {
 
@@ -37,6 +52,8 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
     private val getMangaHistory: GetMangaHistory = Injekt.get()
     private val animeSourceManager: AnimeSourceManager = Injekt.get()
     private val mangaSourceManager: MangaSourceManager = Injekt.get()
+    private val networkToLocalAnime: NetworkToLocalAnime = Injekt.get()
+    private val networkToLocalManga: NetworkToLocalManga = Injekt.get()
 
     private val isStandalone = StandaloneScope.isActive
 
@@ -58,19 +75,24 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
 
             val continueList = loadContinue()
 
+            if (isStandalone) {
+                refreshFromSource(continueList)
+                return@launchIO
+            }
+
             val trendingAnime = if (isAnimeScope) safeFeed(true, "TRENDING_DESC") else emptyList()
             val trendingManga = if (isMangaContent) safeFeed(false, "TRENDING_DESC") else emptyList()
-            val trending = (trendingAnime + trendingManga).map(::toFeedItem)
+            val trending = (trendingAnime + trendingManga).map(::toGlobalFeedItem)
 
             // Use the first genre of the top trending title to give recommendations a personal touch.
             val genre = trending.firstOrNull()?.genres?.firstOrNull()
             val recommendedAnime = if (isAnimeScope) safeFeed(true, "SCORE_DESC", genre) else emptyList()
             val recommendedManga = if (isMangaContent) safeFeed(false, "SCORE_DESC", genre) else emptyList()
-            val recommended = (recommendedAnime + recommendedManga).map(::toFeedItem)
+            val recommended = (recommendedAnime + recommendedManga).map(::toGlobalFeedItem)
 
             val popularAnime = if (isAnimeScope) safeFeed(true, "POPULARITY_DESC") else emptyList()
             val popularManga = if (isMangaContent) safeFeed(false, "POPULARITY_DESC") else emptyList()
-            val popular = (popularAnime + popularManga).map(::toFeedItem)
+            val popular = (popularAnime + popularManga).map(::toGlobalFeedItem)
 
             mutableState.update {
                 it.copy(
@@ -82,13 +104,6 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
                     continueList = continueList,
                 )
             }
-
-            // Only the titles that can actually be shown need a catalogue lookup.
-            verifyAvailability(
-                listOf(trending, recommended, popular)
-                    .flatMap { it.take(10) }
-                    .distinctBy { normalized(it.title) to it.isAnime },
-            )
         }
     }
 
@@ -116,7 +131,7 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
         return runCatching { dataSource.getMedia(anime, sort, genre) }.getOrDefault(emptyList())
     }
 
-    private fun toFeedItem(media: HomeFeedMedia) = FeedItem(
+    private fun toGlobalFeedItem(media: HomeFeedMedia) = FeedItem(
         id = media.id,
         title = media.title,
         coverUrl = media.coverUrl,
@@ -174,56 +189,209 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
         }
     }
 
-    /**
-     * Queries the bundled source for every title. Uses a small concurrency limit so weak devices
-     * are not hit by dozens of parallel catalogue requests, and never writes to the database.
-     */
-    private suspend fun verifyAvailability(items: List<FeedItem>) {
-        // A global feed has no single bundled source to check against.
-        if (items.isEmpty() || !isStandalone) return
-        val unique = items.distinctBy { normalized(it.title) to it.isAnime }
-        val results = HashMap<Pair<String, Boolean>, Boolean>()
-        val semaphore = Semaphore(4)
+    // ---------------------------------------------------------------------------
+    // Standalone: the catalogue of the bundled extension is the source of truth.
+    // ---------------------------------------------------------------------------
 
-        coroutineScope {
-            unique.map { item ->
-                async {
-                    semaphore.withPermit {
-                        val key = normalized(item.title) to item.isAnime
-                        val available = runCatching {
-                            withTimeout(8_000) { isAvailable(item) }
-                        }.getOrDefault(false)
-                        synchronized(results) { results[key] = available }
-                    }
-                }
-            }.awaitAll()
+    private suspend fun refreshFromSource(continueList: List<ContinueItem>) {
+        val animeScope = StandaloneScope.appliesTo(StandaloneScope.KIND_ANIME)
+
+        // Every entry the source exposes through its popular listing, across all pages.
+        val allEntries = if (animeScope) loadAllAnimeEntries() else loadAllMangaEntries()
+
+        val (trendingName, categoryNames) = if (animeScope) {
+            val source = animeSourceManager.get(sourceId) as? AnimeCatalogueSource
+            Pair(source?.let(::animeTrendingFilterName), source?.let(::animeCategoryNames).orEmpty())
+        } else {
+            val source = mangaSourceManager.get(sourceId) as? CatalogueSource
+            Pair(source?.let(::mangaTrendingFilterName), source?.let(::mangaCategoryNames).orEmpty())
         }
 
-        mutableState.update { state ->
-            fun List<FeedItem>.mark(): List<FeedItem> = map { item ->
-                val available = results[normalized(item.title) to item.isAnime]
-                    ?: return@map item
-                item.copy(available = available)
+        val sourceTrending = when {
+            trendingName == null -> emptyList()
+            animeScope -> searchAnimeWith(trendingName, isCategory = false)
+            else -> searchMangaWith(trendingName, isCategory = false)
+        }
+        val categories = categoryNames.map { name ->
+            val items = if (animeScope) {
+                searchAnimeWith(name, isCategory = true)
+            } else {
+                searchMangaWith(name, isCategory = true)
             }
-            state.copy(
-                trending = state.trending.mark(),
-                recommended = state.recommended.mark(),
-                popular = state.popular.mark(),
+            FeedCategory(name, items)
+        }.filter { it.items.isNotEmpty() }
+
+        // External APIs only suggest titles. A suggestion becomes a card only after its title was
+        // found, with an exact normalised match, in the bundled extension. Only ask for titles of
+        // the kind this standalone actually bundles (novels use the manga source).
+        suspend fun suggestions(sort: String): List<HomeFeedMedia> {
+            val animeHits = if (animeScope) safeFeed(true, sort) else emptyList()
+            val mangaHits = if (animeScope) emptyList() else safeFeed(false, sort)
+            return animeHits + mangaHits
+        }
+        val matchedTrending = matchSuggestions(suggestions("TRENDING_DESC"))
+        val matchedRecommended = matchSuggestions(suggestions("SCORE_DESC"))
+        val matchedPopular = matchSuggestions(suggestions("POPULARITY_DESC"))
+
+        val finalTrending = if (sourceTrending.isNotEmpty()) sourceTrending else matchedTrending
+        mutableState.update {
+            it.copy(
+                isLoading = false,
+                isRefreshing = false,
+                allEntries = allEntries,
+                popular = matchedPopular.ifEmpty { allEntries.take(POPULAR_FALLBACK_COUNT) },
+                recommended = matchedRecommended,
+                trending = finalTrending,
+                // Trending is a real section only when the extension exposes a trending filter.
+                hasTrending = trendingName != null && finalTrending.isNotEmpty(),
+                categorySections = categories,
+                continueList = continueList,
             )
         }
     }
 
-    private suspend fun isAvailable(item: FeedItem): Boolean = withIOContext {
-        if (item.isAnime) {
+    private suspend fun loadAllAnimeEntries(): List<FeedItem> = withIOContext {
+        val source = animeSourceManager.get(sourceId) as? AnimeCatalogueSource ?: return@withIOContext emptyList()
+        buildList {
+            var page = 1
+            while (page <= MAX_CATALOGUE_PAGES) {
+                val result = runCatching {
+                    withTimeout(PAGE_TIMEOUT) { source.getPopularAnime(page) }
+                }.getOrNull() ?: break
+                result.animes.forEach { anime ->
+                    runCatching {
+                        val local = networkToLocalAnime.await(anime.toDomainAnime(sourceId))
+                        add(anime.toSourceFeedItem(local.id))
+                    }
+                }
+                if (!result.hasNextPage || result.animes.isEmpty()) break
+                page++
+            }
+        }
+    }
+
+    private suspend fun loadAllMangaEntries(): List<FeedItem> = withIOContext {
+        val source = mangaSourceManager.get(sourceId) as? CatalogueSource ?: return@withIOContext emptyList()
+        buildList {
+            var page = 1
+            while (page <= MAX_CATALOGUE_PAGES) {
+                val result = runCatching {
+                    withTimeout(PAGE_TIMEOUT) { source.getPopularManga(page) }
+                }.getOrNull() ?: break
+                result.mangas.forEach { manga ->
+                    runCatching {
+                        val local = networkToLocalManga.await(manga.toDomainManga(sourceId))
+                        add(manga.toSourceFeedItem(local.id))
+                    }
+                }
+                if (!result.hasNextPage || result.mangas.isEmpty()) break
+                page++
+            }
+        }
+    }
+
+    private suspend fun searchAnimeWith(name: String, isCategory: Boolean): List<FeedItem> = withIOContext {
+        val source = animeSourceManager.get(sourceId) as? AnimeCatalogueSource ?: return@withIOContext emptyList()
+        runCatching {
+            withTimeout(PAGE_TIMEOUT) {
+                val filters = source.safeFilterList()
+                val applied = if (isCategory) {
+                    applyAnimeCategory(filters, name)
+                } else {
+                    applyAnimeTrending(filters, name)
+                }
+                if (!applied) return@withTimeout emptyList()
+                source.getSearchAnime(1, "", filters).animes.mapNotNull { anime ->
+                    runCatching {
+                        val local = networkToLocalAnime.await(anime.toDomainAnime(sourceId))
+                        anime.toSourceFeedItem(local.id)
+                    }.getOrNull()
+                }
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    private suspend fun searchMangaWith(name: String, isCategory: Boolean): List<FeedItem> = withIOContext {
+        val source = mangaSourceManager.get(sourceId) as? CatalogueSource ?: return@withIOContext emptyList()
+        runCatching {
+            withTimeout(PAGE_TIMEOUT) {
+                val filters = source.safeFilterList()
+                val applied = if (isCategory) {
+                    applyMangaCategory(filters, name)
+                } else {
+                    applyMangaTrending(filters, name)
+                }
+                if (!applied) return@withTimeout emptyList()
+                source.getSearchManga(1, "", filters).mangas.mapNotNull { manga ->
+                    runCatching {
+                        val local = networkToLocalManga.await(manga.toDomainManga(sourceId))
+                        manga.toSourceFeedItem(local.id)
+                    }.getOrNull()
+                }
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    /**
+     * Converts AniList suggestions into cards backed by real extension entries. Nothing is shown
+     * when the title does not match exactly after normalisation (case and signs ignored).
+     */
+    private suspend fun matchSuggestions(media: List<HomeFeedMedia>): List<FeedItem> {
+        val unique = media.distinctBy { normalized(it.title) to it.isAnime }
+        if (unique.isEmpty()) return emptyList()
+        val semaphore = Semaphore(4)
+        return coroutineScope {
+            unique.map { suggestion ->
+                async {
+                    semaphore.withPermit {
+                        runCatching {
+                            withTimeout(SEARCH_TIMEOUT) { findSourceEntry(suggestion) }
+                        }.getOrNull()
+                    }
+                }
+            }.awaitAll().filterNotNull()
+        }
+    }
+
+    private suspend fun findSourceEntry(media: HomeFeedMedia): FeedItem? = withIOContext {
+        if (media.isAnime) {
             val source = animeSourceManager.get(sourceId) as? AnimeCatalogueSource
-                ?: return@withIOContext false
-            val page = source.getSearchAnime(1, item.title, source.getFilterList())
-            page.animes.any { titlesMatch(it.title, item.title) }
+                ?: return@withIOContext null
+            val page = source.getSearchAnime(1, media.title, source.safeFilterList())
+            val match = page.animes.firstOrNull { normalized(it.title) == normalized(media.title) }
+                ?: return@withIOContext null
+            val local = networkToLocalAnime.await(match.toDomainAnime(sourceId))
+            FeedItem(
+                id = local.id,
+                title = match.title,
+                coverUrl = match.thumbnail_url,
+                isAnime = true,
+                rating = media.rating,
+                synopsis = media.synopsis,
+                format = media.format,
+                genres = media.genres,
+                available = true,
+                localId = local.id,
+            )
         } else {
             val source = mangaSourceManager.get(sourceId) as? CatalogueSource
-                ?: return@withIOContext false
-            val page = source.getSearchManga(1, item.title, source.getFilterList())
-            page.mangas.any { titlesMatch(it.title, item.title) }
+                ?: return@withIOContext null
+            val page = source.getSearchManga(1, media.title, source.safeFilterList())
+            val match = page.mangas.firstOrNull { normalized(it.title) == normalized(media.title) }
+                ?: return@withIOContext null
+            val local = networkToLocalManga.await(match.toDomainManga(sourceId))
+            FeedItem(
+                id = local.id,
+                title = match.title,
+                coverUrl = match.thumbnail_url,
+                isAnime = false,
+                rating = media.rating,
+                synopsis = media.synopsis,
+                format = media.format,
+                genres = media.genres,
+                available = true,
+                localId = local.id,
+            )
         }
     }
 
@@ -234,6 +402,10 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
         val trending: List<FeedItem> = emptyList(),
         val recommended: List<FeedItem> = emptyList(),
         val popular: List<FeedItem> = emptyList(),
+        /** All entries exposed by the bundled extension. */
+        val allEntries: List<FeedItem> = emptyList(),
+        val categorySections: List<FeedCategory> = emptyList(),
+        val hasTrending: Boolean = false,
         val continueList: List<ContinueItem> = emptyList(),
         val showFeatured: Boolean = true,
         val showContinue: Boolean = true,
@@ -242,6 +414,12 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
         val autoScrollHero: Boolean = true,
         val onlyAvailable: Boolean = true,
         val itemsPerSection: Int = 10,
+    )
+
+    @Immutable
+    data class FeedCategory(
+        val name: String,
+        val items: List<FeedItem>,
     )
 
     @Immutable
@@ -254,8 +432,10 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
         val synopsis: String,
         val format: String,
         val genres: List<String>,
-        /** null while the bundled source is still being queried. */
+        /** null while the bundled source is still being queried (global feed only). */
         val available: Boolean? = null,
+        /** Local database id of the real extension entry; used to open its detail screen. */
+        val localId: Long? = null,
     )
 
     @Immutable
@@ -269,19 +449,209 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
         val isAnime: Boolean,
         val isNovel: Boolean,
     )
+
+    private companion object {
+        const val MAX_CATALOGUE_PAGES = 15
+        const val PAGE_TIMEOUT = 15_000L
+        const val SEARCH_TIMEOUT = 8_000L
+        const val POPULAR_FALLBACK_COUNT = 20
+    }
 }
+
+private fun SAnime.toSourceFeedItem(localId: Long) = StandaloneFeedScreenModel.FeedItem(
+    id = localId,
+    title = title,
+    coverUrl = thumbnail_url,
+    isAnime = true,
+    rating = "",
+    synopsis = description.orEmpty(),
+    format = "",
+    genres = getGenres().orEmpty(),
+    available = true,
+    localId = localId,
+)
+
+private fun SManga.toSourceFeedItem(localId: Long) = StandaloneFeedScreenModel.FeedItem(
+    id = localId,
+    title = title,
+    coverUrl = thumbnail_url,
+    isAnime = false,
+    rating = "",
+    synopsis = description.orEmpty(),
+    format = "",
+    genres = getGenres().orEmpty(),
+    available = true,
+    localId = localId,
+)
 
 private fun normalized(title: String): String =
     title.lowercase().replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
 
-private fun titlesMatch(a: String, b: String): Boolean {
-    val first = normalized(a)
-    val second = normalized(b)
-    if (first.isBlank() || second.isBlank()) return false
-    if (first == second || first.contains(second) || second.contains(first)) return true
-    val firstWords = first.split(' ').filter { it.length > 2 }.toSet()
-    val secondWords = second.split(' ').filter { it.length > 2 }.toSet()
-    return firstWords.isNotEmpty() &&
-        secondWords.isNotEmpty() &&
-        firstWords.intersect(secondWords).size >= 2
+private fun isTrendingName(name: String): Boolean =
+    name.contains("trend", ignoreCase = true) || name.contains("tendenc", ignoreCase = true)
+
+private fun AnimeCatalogueSource.safeFilterList(): AnimeFilterList = try {
+    getFilterList()
+} catch (e: Throwable) {
+    logcat(LogPriority.ERROR, e) { "Failed to build filters for source $name ($id)" }
+    AnimeFilterList()
 }
+
+private fun CatalogueSource.safeFilterList(): FilterList = try {
+    getFilterList()
+} catch (e: Throwable) {
+    logcat(LogPriority.ERROR, e) { "Failed to build filters for source $name ($id)" }
+    FilterList()
+}
+
+private fun animeTrendingFilterName(source: AnimeCatalogueSource): String? =
+    source.safeFilterList().firstOrNull { filter ->
+        isTrendingName(filter.name) && (filter is AnimeFilter.Sort || filter is AnimeFilter.Select<*>)
+    }?.name
+
+private fun mangaTrendingFilterName(source: CatalogueSource): String? =
+    source.safeFilterList().firstOrNull { filter ->
+        isTrendingName(filter.name) && (filter is Filter.Sort || filter is Filter.Select<*>)
+    }?.name
+
+private fun animeCategoryNames(source: AnimeCatalogueSource): List<String> = buildList {
+    source.safeFilterList().forEach { filter ->
+        when (filter) {
+            is AnimeFilter.Group<*> -> filter.state.forEach { child ->
+                if (child is AnimeFilter<*>) {
+                    val name = child.name
+                    if (name.isNotBlank() &&
+                        child !is AnimeFilter.Header &&
+                        child !is AnimeFilter.Separator &&
+                        !isTrendingName(name)
+                    ) {
+                        add(name)
+                    }
+                }
+            }
+            is AnimeFilter.TriState, is AnimeFilter.CheckBox -> {
+                if (filter.name.isNotBlank() && !isTrendingName(filter.name)) add(filter.name)
+            }
+            else -> Unit
+        }
+    }
+}.distinct().take(MAX_CATEGORY_FILTERS)
+
+private fun mangaCategoryNames(source: CatalogueSource): List<String> = buildList {
+    source.safeFilterList().forEach { filter ->
+        when (filter) {
+            is Filter.Group<*> -> filter.state.forEach { child ->
+                if (child is Filter<*>) {
+                    val name = child.name
+                    if (name.isNotBlank() &&
+                        child !is Filter.Header &&
+                        child !is Filter.Separator &&
+                        !isTrendingName(name)
+                    ) {
+                        add(name)
+                    }
+                }
+            }
+            is Filter.TriState, is Filter.CheckBox -> {
+                if (filter.name.isNotBlank() && !isTrendingName(filter.name)) add(filter.name)
+            }
+            else -> Unit
+        }
+    }
+}.distinct().take(MAX_CATEGORY_FILTERS)
+
+private fun applyAnimeCategory(filters: AnimeFilterList, name: String): Boolean {
+    filters.forEach { filter ->
+        when (filter) {
+            is AnimeFilter.Group<*> -> filter.state.forEach { child ->
+                if (child is AnimeFilter<*> && child.name.equals(name, ignoreCase = true)) {
+                    when (child) {
+                        is AnimeFilter.TriState -> child.state = AnimeFilter.TriState.STATE_INCLUDE
+                        is AnimeFilter.CheckBox -> child.state = true
+                        else -> Unit
+                    }
+                    return true
+                }
+            }
+            is AnimeFilter.TriState -> if (filter.name.equals(name, ignoreCase = true)) {
+                filter.state = AnimeFilter.TriState.STATE_INCLUDE
+                return true
+            }
+            is AnimeFilter.CheckBox -> if (filter.name.equals(name, ignoreCase = true)) {
+                filter.state = true
+                return true
+            }
+            else -> Unit
+        }
+    }
+    return false
+}
+
+private fun applyMangaCategory(filters: FilterList, name: String): Boolean {
+    filters.forEach { filter ->
+        when (filter) {
+            is Filter.Group<*> -> filter.state.forEach { child ->
+                if (child is Filter<*> && child.name.equals(name, ignoreCase = true)) {
+                    when (child) {
+                        is Filter.TriState -> child.state = Filter.TriState.STATE_INCLUDE
+                        is Filter.CheckBox -> child.state = true
+                        else -> Unit
+                    }
+                    return true
+                }
+            }
+            is Filter.TriState -> if (filter.name.equals(name, ignoreCase = true)) {
+                filter.state = Filter.TriState.STATE_INCLUDE
+                return true
+            }
+            is Filter.CheckBox -> if (filter.name.equals(name, ignoreCase = true)) {
+                filter.state = true
+                return true
+            }
+            else -> Unit
+        }
+    }
+    return false
+}
+
+private fun applyAnimeTrending(filters: AnimeFilterList, name: String): Boolean {
+    val filter = filters.firstOrNull { it.name.equals(name, ignoreCase = true) } ?: return false
+    return when (filter) {
+        is AnimeFilter.Sort -> {
+            val index = filter.values.indexOfFirst { isTrendingName(it) }
+            filter.state = AnimeFilter.Sort.Selection(
+                index = if (index >= 0) index else 0,
+                ascending = false,
+            )
+            true
+        }
+        is AnimeFilter.Select<*> -> {
+            val index = filter.values.indexOfFirst { isTrendingName(it.toString()) }
+            filter.state = if (index >= 0) index else 0
+            true
+        }
+        else -> false
+    }
+}
+
+private fun applyMangaTrending(filters: FilterList, name: String): Boolean {
+    val filter = filters.firstOrNull { it.name.equals(name, ignoreCase = true) } ?: return false
+    return when (filter) {
+        is Filter.Sort -> {
+            val index = filter.values.indexOfFirst { isTrendingName(it) }
+            filter.state = Filter.Sort.Selection(
+                index = if (index >= 0) index else 0,
+                ascending = false,
+            )
+            true
+        }
+        is Filter.Select<*> -> {
+            val index = filter.values.indexOfFirst { isTrendingName(it.toString()) }
+            filter.state = if (index >= 0) index else 0
+            true
+        }
+        else -> false
+    }
+}
+
+private const val MAX_CATEGORY_FILTERS = 6
