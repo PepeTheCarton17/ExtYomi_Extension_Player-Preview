@@ -80,10 +80,12 @@ class ReleaseServiceImpl(
         val buildType = if (arguments.isPreview) "preview" else "release"
         val abi = Build.SUPPORTED_ABIS.getOrNull(0)
 
-        return (apks.firstOrNull { it.name == "app-$abi-$buildType.apk" }
-            ?: apks.firstOrNull { it.name == "app-universal-$buildType.apk" }
-            ?: apks.firstOrNull { it.name.contains("universal") }
-            ?: apks.firstOrNull())
+        return (
+            apks.firstOrNull { it.name == "app-$abi-$buildType.apk" }
+                ?: apks.firstOrNull { it.name == "app-universal-$buildType.apk" }
+                ?: apks.firstOrNull { it.name.contains("universal") }
+                ?: apks.firstOrNull()
+            )
             ?.downloadLink
     }
 
