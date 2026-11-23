@@ -40,7 +40,7 @@ class ReleaseServiceImpl(
                 .awaitSuccess()
                 .parseAs<GithubRelease>()
         }
-        val downloadLink = getDownloadLink(release) ?: return null
+        val downloadLink = getDownloadLink(release, arguments) ?: return null
 
         return Release(
             version = release.version,
@@ -64,7 +64,7 @@ class ReleaseServiceImpl(
         // The feed lists newest first, so the first <entry> is the latest release.
         val entry = ATOM_ENTRY_REGEX.find(atom)?.groupValues?.get(1) ?: return null
         val tag = ATOM_TAG_REGEX.find(entry)?.groupValues?.get(1)?.takeIf { it.isNotBlank() } ?: return null
-        val downloadLink = getDownloadLink(arguments.repository, tag)
+        val downloadLink = getDownloadLink(arguments, tag)
 
         return Release(
             version = tag,
@@ -74,24 +74,28 @@ class ReleaseServiceImpl(
         )
     }
 
-    /** Picks the ABI-specific asset published by the API, falling back to the universal one. */
-    private fun getDownloadLink(release: GithubRelease): String? {
-        val map = release.assets.associate { asset ->
-            BUILD_TYPES.find { "-$it" in asset.name } to asset.downloadLink
-        }
+    /** Picks the ABI-specific APK published by CI, falling back to the universal one. */
+    private fun getDownloadLink(release: GithubRelease, arguments: GetApplicationRelease.Arguments): String? {
+        val apks = release.assets.filter { it.name.endsWith(".apk", ignoreCase = true) }
+        val buildType = if (arguments.isPreview) "preview" else "release"
+        val abi = Build.SUPPORTED_ABIS.getOrNull(0)
 
-        return map[Build.SUPPORTED_ABIS[0]] ?: map[null]
+        return apks.firstOrNull { it.name == "app-$abi-$buildType.apk" }
+            ?: apks.firstOrNull { it.name == "app-universal-$buildType.apk" }
+            ?: apks.firstOrNull { it.name.contains("universal") }
+            ?: apks.firstOrNull()
+            ?.downloadLink
     }
 
     /**
-     * Reconstructs the download URL from a tag when only the feed is available. Mirrors the release
-     * asset naming from `.github/workflows/build_push.yml` (`nekoyomi-<abi>-<tag>.apk`, or the
-     * universal `nekoyomi-<tag>.apk` when the device ABI has no dedicated build).
+     * Reconstructs the download URL from a tag when only the feed is available. Mirrors the assets
+     * uploaded by `.github/workflows/preview.yml` (`app-<abi>-preview.apk`, or `app-universal-preview.apk`).
      */
-    private fun getDownloadLink(repository: String, tag: String): String {
+    private fun getDownloadLink(arguments: GetApplicationRelease.Arguments, tag: String): String {
+        val buildType = if (arguments.isPreview) "preview" else "release"
         val abi = Build.SUPPORTED_ABIS.getOrNull(0)?.takeIf { it in BUILD_TYPES }
-        val fileName = if (abi != null) "nekoyomi-$abi-$tag.apk" else "nekoyomi-$tag.apk"
-        return "https://github.com/$repository/releases/download/$tag/$fileName"
+        val fileName = if (abi != null) "app-$abi-$buildType.apk" else "app-universal-$buildType.apk"
+        return "https://github.com/${arguments.repository}/releases/download/$tag/$fileName"
     }
 
     /** Turns the atom entry's HTML notes into plain text (the update prompt renders them as markdown). */

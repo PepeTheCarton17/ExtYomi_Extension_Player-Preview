@@ -2,9 +2,16 @@
 
 ExtYomi sigue siendo un fork de Nekoyomi. La novedad es el apartado **Explorar → Apps independientes**,
 junto a Fuentes, Extensiones y Migrar. Arriba del todo tiene las subcategorías **Anime / Manga /
-Novelas** y reutiliza el buscador nativo de Fuentes; no añade filtros, anclas ni controles de idioma
-propios. Cada extensión ocupa una sola fila aunque exponga varias fuentes. La generación de apps de
-novelas todavía no está disponible; la categoría se muestra pero el botón está deshabilitado.
+Novelas**, que solo cambian el tipo de contenido. Debajo, la lista replica exactamente el apartado
+**Fuentes**: bloque **Ancladas** primero, después cabeceras por idioma, con el mismo buscador global
+(`TravelExplore`) y el mismo filtro (`FilterList`) que Fuentes. No hay chips ni controles propios.
+Cada extensión ocupa una sola fila aunque exponga varias fuentes. La generación de apps de novelas
+todavía no está disponible; la categoría se muestra pero el botón está deshabilitado.
+
+Las apps generadas quedan registradas en el propio apartado, con una sección **Actualizaciones**
+cuando hay una versión nueva del generador y otra **Instaladas**. Generar, instalar, actualizar y
+abrir se hacen desde ahí: al instalar aparece el estado **Instalando** y, al terminar, una acción
+**Abrir**. El contador de actualizaciones se muestra en la pestaña.
 
 ## Qué genera el botón «Crear app»
 
@@ -34,7 +41,9 @@ Al arrancar, `StandaloneScope.initializeFromAssets()` lee la configuración y:
 
 - marca la extensión como de confianza en el almacenamiento privado de la nueva app;
 - fija el `sourceId` y el `kind` (anime o manga);
-- Home muestra solo **Inicio**, **Biblioteca** y **Más**;
+- Home muestra **Inicio**, **Catálogo**, **Biblioteca** y **Más**. La casita es siempre el feed y
+  nunca la biblioteca; tocarla cuando ya está seleccionada abre los ajustes del feed, como en
+  Animetail;
 - el catálogo sustituye la flecha de retroceso por el icono de la extensión;
 - **Inicio** es un Home con estructura propia, inspirado en el NEW HOME de Animetail: barra superior,
   chips de tipo/formato, carrusel destacado con avance automático y secciones «Continuar viendo y
@@ -44,10 +53,17 @@ Al arrancar, `StandaloneScope.initializeFromAssets()` lee la configuración y:
   disponibilidad se consulta el catálogo de la extensión en segundo plano, sin insertar nada en la
   biblioteca y sin sustituir las carátulas de la API;
 - Biblioteca e Historial se filtran por ese `sourceId`;
-- Ajustes → Apariencia incluye «Pantalla de inicio» para elegir entre **Feed (catálogo)** y
-  **New Home (biblioteca)**; se ocultan los ajustes de anime/manga/novelas y el selector de icono,
+- Ajustes → Apariencia incluye «Pantalla de inicio» para elegir entre **Feed (catálogo)** —que abre
+  el catálogo de la fuente— y **Inicio nuevo** —que abre el feed de Animetail—. El cambio se aplica
+  al instante, sin reiniciar; se ocultan los ajustes de anime/manga/novelas y el selector de icono,
   que no aplican a una app de una sola fuente;
-- el apartado «Apps independientes» desaparece.
+- el apartado «Apps independientes» desaparece, y con él la actualización interna del host: una
+  standalone tiene otro paquete y otra firma, así que solo se actualiza desde el generador.
+
+El generador (ExtYomi) también tiene la casita en la barra inferior con el mismo feed global, y
+«Buscar actualizaciones» en Ajustes → Acerca de. En Preview la actualización interna se compila con
+`-Penable-updater` y apunta a los tags `preview-vX.Y.Z` de este repositorio; el workflow estable no
+se ha tocado.
 
 La app generada usa el sistema de extensiones de Nekoyomi tal cual, pero queda reducida a una sola
 fuente. La extensión debe seguir instalada en el dispositivo.

@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
+import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.more.LogoHeader
@@ -94,7 +95,10 @@ object AboutScreen : Screen() {
                     )
                 }
 
-                if (updaterEnabled) {
+                // A generated standalone has a different package and signing key, so the host's
+                // release APK could never be installed over it. Those apps are updated from the
+                // generator's "Apps independientes" tab instead.
+                if (updaterEnabled && !StandaloneScope.isActive) {
                     item {
                         TextPreferenceWidget(
                             title = stringResource(MR.strings.check_for_updates),

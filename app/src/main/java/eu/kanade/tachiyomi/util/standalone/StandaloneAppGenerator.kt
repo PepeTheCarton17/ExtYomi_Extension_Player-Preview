@@ -37,11 +37,20 @@ import java.util.Locale
  */
 object StandaloneAppGenerator {
 
+    data class StandaloneAppResult(
+        val fileName: String,
+        val outputDirUri: String,
+        val apkUri: String,
+        val packageName: String,
+        val generatedVersionCode: Long,
+        val generatedVersionName: String,
+    )
+
     suspend fun generate(
         context: Context,
         item: StandaloneExtensionItem,
         outputDirUri: Uri,
-    ): String = withContext(Dispatchers.IO) {
+    ): StandaloneAppResult = withContext(Dispatchers.IO) {
         val workDir = File(context.cacheDir, "standalone-build").apply { mkdirs() }
         val unsignedApk = File(workDir, "unsigned.apk")
         val signedApk = File(workDir, "signed.apk")
@@ -149,7 +158,14 @@ object StandaloneAppGenerator {
 
         unsignedApk.delete()
         signedApk.delete()
-        fileName
+        StandaloneAppResult(
+            fileName = fileName,
+            outputDirUri = outputDirUri.toString(),
+            apkUri = outputFile.uri.toString(),
+            packageName = newPackage,
+            generatedVersionCode = BuildConfig.VERSION_CODE.toLong(),
+            generatedVersionName = BuildConfig.VERSION_NAME,
+        )
     }
 
     private fun standalonePackageName(

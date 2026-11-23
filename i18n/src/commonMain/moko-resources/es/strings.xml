@@ -269,9 +269,11 @@
     <string name="label_extensions">Extensiones</string>
     <string name="label_standalone_apps">Apps independientes</string>
     <string name="label_standalone_feed">Feed</string>
+    <string name="label_home">Inicio</string>
+    <string name="label_standalone_catalogue">Catálogo</string>
     <string name="pref_standalone_home_mode">Pantalla de inicio</string>
     <string name="pref_standalone_home_mode_feed">Feed (catálogo)</string>
-    <string name="pref_standalone_home_mode_new_home">New Home (biblioteca)</string>
+    <string name="pref_standalone_home_mode_new_home">Inicio nuevo</string>
     <string name="standalone_apps_summary">Convierte una extensión instalada en una app propia</string>
     <string name="standalone_no_extensions">No hay extensiones instaladas</string>
     <string name="standalone_output_folder">Carpeta de salida</string>
@@ -282,6 +284,7 @@
     <string name="standalone_generating">Generando %1$s…</string>
     <string name="standalone_generated">App generada: %1$s</string>
     <string name="standalone_error">No se pudo generar la app</string>
+    <string name="standalone_open">Abrir</string>
     <string name="standalone_pick_output_first">Elige primero una carpeta de salida</string>
     <string name="standalone_novel_not_supported">Las apps independientes de novelas aún no son compatibles</string>
     <string name="standalone_feed_title">Inicio</string>

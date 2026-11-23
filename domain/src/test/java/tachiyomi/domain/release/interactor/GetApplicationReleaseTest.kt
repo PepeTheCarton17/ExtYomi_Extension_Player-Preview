@@ -87,6 +87,84 @@ class GetApplicationReleaseTest {
     }
 
     @Test
+    fun `When preview semver tag is newer expect new update`() = runTest {
+        every { preference.get() } returns 0
+        every { preference.set(any()) }.answers { }
+
+        val release = Release(
+            "preview-v0.1.9",
+            "info",
+            "http://example.com/release_link",
+            "http://example.com/release_link.apk",
+        )
+
+        coEvery { releaseService.latest(any()) } returns release
+
+        val result = getApplicationRelease.await(
+            GetApplicationRelease.Arguments(
+                isPreview = true,
+                commitCount = 168,
+                versionName = "0.1.8",
+                repository = "test",
+            ),
+        )
+
+        (result as GetApplicationRelease.Result.NewUpdate).release shouldBe release
+    }
+
+    @Test
+    fun `When preview semver tag is older expect no new update`() = runTest {
+        every { preference.get() } returns 0
+        every { preference.set(any()) }.answers { }
+
+        val release = Release(
+            "preview-v0.1.8",
+            "info",
+            "http://example.com/release_link",
+            "http://example.com/release_link.apk",
+        )
+
+        coEvery { releaseService.latest(any()) } returns release
+
+        val result = getApplicationRelease.await(
+            GetApplicationRelease.Arguments(
+                isPreview = true,
+                commitCount = 168,
+                versionName = "0.1.9",
+                repository = "test",
+            ),
+        )
+
+        result shouldBe GetApplicationRelease.Result.NoNewUpdate
+    }
+
+    @Test
+    fun `When semver minor has two digits compare numerically`() = runTest {
+        every { preference.get() } returns 0
+        every { preference.set(any()) }.answers { }
+
+        val release = Release(
+            "v0.1.10",
+            "info",
+            "http://example.com/release_link",
+            "http://example.com/release_link.apk",
+        )
+
+        coEvery { releaseService.latest(any()) } returns release
+
+        val result = getApplicationRelease.await(
+            GetApplicationRelease.Arguments(
+                isPreview = false,
+                commitCount = 0,
+                versionName = "0.1.9",
+                repository = "test",
+            ),
+        )
+
+        (result as GetApplicationRelease.Result.NewUpdate).release shouldBe release
+    }
+
+    @Test
     fun `When has no update expect no new update`() = runTest {
         every { preference.get() } returns 0
         every { preference.set(any()) }.answers { }

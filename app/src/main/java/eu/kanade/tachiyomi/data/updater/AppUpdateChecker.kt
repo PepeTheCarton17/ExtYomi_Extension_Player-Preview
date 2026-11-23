@@ -42,15 +42,15 @@ class AppUpdateChecker {
 
 val GITHUB_REPO: String by lazy {
     if (isPreviewBuildType) {
-        "Seguaz/Nekoyomi"
+        "PepeTheCarton17/ExtYomi_Extension_Player-Preview"
     } else {
-        "Seguaz/Nekoyomi"
+        "PepeTheCarton17/ExtYomi_Extension_Player"
     }
 }
 
 val RELEASE_TAG: String by lazy {
     if (isPreviewBuildType) {
-        "r${BuildConfig.COMMIT_COUNT}"
+        "preview-v${BuildConfig.VERSION_NAME}"
     } else {
         "v${BuildConfig.VERSION_NAME}"
     }

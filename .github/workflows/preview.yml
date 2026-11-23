@@ -38,7 +38,7 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew assemblePreview --no-daemon --stacktrace
+        run: ./gradlew assemblePreview -Penable-updater --no-daemon --stacktrace
 
       - name: Generate checksums
         run: |
@@ -49,8 +49,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="preview-v0.1.8"
-          TITLE="ExtYomi Preview v0.1.8"
+          TAG="preview-v0.1.9"
+          TITLE="ExtYomi Preview v0.1.9"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" app/build/outputs/apk/preview/*.apk app/build/outputs/apk/preview/checksums.txt --clobber
           else
