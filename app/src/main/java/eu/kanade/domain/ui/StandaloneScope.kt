@@ -21,6 +21,7 @@ object StandaloneScope {
 
     const val KIND_ANIME = "anime"
     const val KIND_MANGA = "manga"
+
     /** Shown as a separate category in the generator; standalone generation is not supported yet. */
     const val KIND_NOVEL = "novel"
     const val CONFIG_ASSET = "standalone_config.json"
