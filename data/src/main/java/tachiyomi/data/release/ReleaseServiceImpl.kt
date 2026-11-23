@@ -84,7 +84,7 @@ class ReleaseServiceImpl(
             ?: apks.firstOrNull { it.name == "app-universal-$buildType.apk" }
             ?: apks.firstOrNull { it.name.contains("universal") }
             ?: apks.firstOrNull()
-            ?.downloadLink
+                ?.downloadLink
     }
 
     /**
