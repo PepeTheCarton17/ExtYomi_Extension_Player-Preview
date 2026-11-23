@@ -153,7 +153,7 @@ class StandaloneAppsScreenModel(
                     ),
                 )
             }
-        }
+        }.distinctBy { Triple(it.kind, it.sourceId, it.extensionPkg) }
 
         val groups = TreeMap<String, MutableList<StandaloneExtensionItem>> { d1, d2 ->
             when {
