@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.ui.browse.standalone
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
@@ -157,6 +159,48 @@ fun Screen.standaloneAppsTab(): TabContent {
     val selectedKindIndex = kindLabels.indexOfFirst { it.first == state.kind }.coerceAtLeast(0)
     val selectedKind = kindLabels[selectedKindIndex].first
 
+    // One row per generated app, in exactly one section, with exactly one action. Transient
+    // phases only swap that action; they never add a second row or a second button.
+    val rows = remember(state.installedApps, state.phaseByPackage) {
+        state.installedApps.map { installed ->
+            val baseSection = when {
+                installed.hasUpdate -> AppSection.UPDATES
+                installed.installed -> AppSection.INSTALLED
+                else -> AppSection.GENERATED
+            }
+            when (val phase = state.phaseByPackage[installed.app.stateKey]) {
+                is StandaloneAppsScreenModel.AppPhase.Generated -> AppRow(
+                    installed = installed,
+                    section = AppSection.GENERATED,
+                    action = RowAction.INSTALL,
+                    app = phase.app,
+                )
+                StandaloneAppsScreenModel.AppPhase.Generating -> AppRow(
+                    installed = installed,
+                    section = baseSection,
+                    action = RowAction.GENERATING,
+                    app = installed.app,
+                )
+                StandaloneAppsScreenModel.AppPhase.Installing -> AppRow(
+                    installed = installed,
+                    section = baseSection,
+                    action = RowAction.INSTALLING,
+                    app = installed.app,
+                )
+                null -> AppRow(
+                    installed = installed,
+                    section = baseSection,
+                    action = when {
+                        installed.hasUpdate -> RowAction.UPDATE
+                        installed.installed -> RowAction.OPEN
+                        else -> RowAction.INSTALL
+                    },
+                    app = installed.app,
+                )
+            }
+        }
+    }
+
     return TabContent(
         titleRes = MR.strings.label_standalone_apps,
         badgeNumber = state.updateCount.takeIf { it > 0 },
@@ -239,104 +283,40 @@ fun Screen.standaloneAppsTab(): TabContent {
                             )
                         }
 
-                        val status = state.status
-                        when (status) {
-                            is StandaloneAppsScreenModel.Status.Generating -> {
-                                Spacer(Modifier.height(12.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    CircularProgressIndicator(Modifier.size(18.dp))
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(
-                                        stringResource(
-                                            MR.strings.standalone_generating,
-                                            status.extensionName,
-                                        ),
-                                    )
-                                }
-                            }
-                            is StandaloneAppsScreenModel.Status.Generated -> {
-                                Spacer(Modifier.height(12.dp))
-                                StatusRow(
-                                    message = stringResource(
-                                        MR.strings.standalone_generated,
-                                        status.app.fileName,
-                                    ),
-                                    actionLabel = stringResource(MR.strings.action_install),
-                                    onAction = { installApp(status.app) },
-                                )
-                            }
-                            is StandaloneAppsScreenModel.Status.Installing -> {
-                                Spacer(Modifier.height(12.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    CircularProgressIndicator(Modifier.size(18.dp))
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(
-                                        stringResource(
-                                            MR.strings.ext_installing,
-                                        ),
-                                    )
-                                }
-                            }
-                            is StandaloneAppsScreenModel.Status.Installed -> {
-                                Spacer(Modifier.height(12.dp))
-                                StatusRow(
-                                    message = stringResource(MR.strings.ext_installed),
-                                    actionLabel = stringResource(MR.strings.standalone_open),
-                                    onAction = { screenModel.open(context, status.app) },
-                                )
-                            }
-                            StandaloneAppsScreenModel.Status.Error -> {
-                                Spacer(Modifier.height(12.dp))
-                                Text(
-                                    stringResource(MR.strings.standalone_error),
-                                    color = MaterialTheme.colorScheme.error,
-                                )
-                            }
-                            null -> Unit
+                        if (state.error) {
+                            Spacer(Modifier.height(12.dp))
+                            Text(
+                                stringResource(MR.strings.standalone_error),
+                                color = MaterialTheme.colorScheme.error,
+                            )
                         }
                     }
                 }
 
-                val updates = state.installedApps.filter { it.hasUpdate }
-                if (updates.isNotEmpty()) {
-                    item(key = "standalone-updates-header") {
-                        SectionHeader(text = stringResource(MR.strings.ext_updates_pending))
-                    }
-                    items(items = updates, key = { "standalone-update-${it.app.packageName}" }) { installed ->
-                        GeneratedAppRow(
-                            installed = installed,
-                            actionLabel = stringResource(MR.strings.ext_update),
-                            onAction = { screenModel.update(context, installed.app) },
-                            onSecondaryAction = { installApp(installed.app) },
-                            secondaryActionLabel = stringResource(MR.strings.action_install),
-                        )
-                    }
-                }
-
-                if (state.installedApps.isNotEmpty()) {
-                    item(key = "standalone-installed-header") {
-                        SectionHeader(text = stringResource(MR.strings.ext_installed))
-                    }
-                    items(items = state.installedApps, key = { "standalone-app-${it.app.packageName}" }) { installed ->
-                        GeneratedAppRow(
-                            installed = installed,
-                            actionLabel = if (installed.installed) {
-                                stringResource(MR.strings.standalone_open)
-                            } else {
-                                stringResource(MR.strings.action_install)
-                            },
-                            onAction = {
-                                if (installed.installed) {
-                                    screenModel.open(context, installed.app)
-                                } else {
-                                    installApp(installed.app)
-                                }
-                            },
-                            onSecondaryAction = { screenModel.update(context, installed.app) },
-                            secondaryActionLabel = stringResource(MR.strings.ext_update),
-                        )
-                    }
-                }
+                appRowsSection(
+                    sectionKey = "updates",
+                    header = stringResource(MR.strings.ext_updates_pending),
+                    rows = rows.filter { it.section == AppSection.UPDATES },
+                    context = context,
+                    screenModel = screenModel,
+                    installApp = ::installApp,
+                )
+                appRowsSection(
+                    sectionKey = "installed",
+                    header = stringResource(MR.strings.ext_installed),
+                    rows = rows.filter { it.section == AppSection.INSTALLED },
+                    context = context,
+                    screenModel = screenModel,
+                    installApp = ::installApp,
+                )
+                appRowsSection(
+                    sectionKey = "generated",
+                    header = stringResource(MR.strings.standalone_generated_apps),
+                    rows = rows.filter { it.section == AppSection.GENERATED },
+                    context = context,
+                    screenModel = screenModel,
+                    installApp = ::installApp,
+                )
 
                 itemsIndexed(
                     items = state.items,
@@ -401,7 +381,7 @@ fun Screen.standaloneAppsTab(): TabContent {
                                     IconButton(
                                         enabled = outputUri.isNotBlank() &&
                                             !isNovel &&
-                                            state.status !is StandaloneAppsScreenModel.Status.Generating,
+                                            !state.isGeneratingAny,
                                         onClick = {
                                             screenModel.generate(context, item, Uri.parse(outputUri))
                                         },
@@ -427,6 +407,17 @@ fun Screen.standaloneAppsTab(): TabContent {
     )
 }
 
+private enum class AppSection { UPDATES, INSTALLED, GENERATED }
+
+private enum class RowAction { UPDATE, OPEN, INSTALL, GENERATING, INSTALLING }
+
+private data class AppRow(
+    val installed: StandaloneInstallState,
+    val section: AppSection,
+    val action: RowAction,
+    val app: GeneratedStandaloneApp,
+)
+
 @Composable
 private fun SectionHeader(text: String) {
     Text(
@@ -437,28 +428,55 @@ private fun SectionHeader(text: String) {
 }
 
 @Composable
-private fun StatusRow(
-    message: String,
-    actionLabel: String,
-    onAction: () -> Unit,
+private fun LazyListScope.appRowsSection(
+    sectionKey: String,
+    header: String,
+    rows: List<AppRow>,
+    context: Context,
+    screenModel: StandaloneAppsScreenModel,
+    installApp: (GeneratedStandaloneApp) -> Unit,
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(text = message, modifier = Modifier.weight(1f))
-        TextButton(onClick = onAction) { Text(actionLabel) }
+    if (rows.isEmpty()) return
+    item(key = "standalone-$sectionKey-header") {
+        SectionHeader(text = header)
+    }
+    items(items = rows, key = { "standalone-$sectionKey-${it.installed.app.packageName}" }) { row ->
+        val actionLabel = when (row.action) {
+            RowAction.UPDATE -> stringResource(MR.strings.ext_update)
+            RowAction.OPEN -> stringResource(MR.strings.standalone_open)
+            RowAction.INSTALL -> stringResource(MR.strings.action_install)
+            RowAction.GENERATING -> stringResource(MR.strings.standalone_generating, row.app.label)
+            RowAction.INSTALLING -> stringResource(MR.strings.ext_installing)
+        }
+        val inProgress = row.action == RowAction.GENERATING || row.action == RowAction.INSTALLING
+        GeneratedAppRow(
+            installed = row.installed,
+            label = row.app.label,
+            actionLabel = actionLabel,
+            inProgress = inProgress,
+            onAction = {
+                when (row.action) {
+                    RowAction.UPDATE -> screenModel.update(context, row.app)
+                    RowAction.OPEN -> screenModel.open(context, row.app)
+                    RowAction.INSTALL -> installApp(row.app)
+                    else -> Unit
+                }
+            },
+        )
     }
 }
 
 @Composable
 private fun GeneratedAppRow(
     installed: StandaloneInstallState,
+    label: String,
     actionLabel: String,
+    inProgress: Boolean,
     onAction: () -> Unit,
-    onSecondaryAction: () -> Unit,
-    secondaryActionLabel: String,
 ) {
     BasePreferenceWidget(
         modifier = Modifier.fillMaxWidth(),
-        title = installed.app.label,
+        title = label,
         subcomponent = {
             Text(
                 text = buildString {
@@ -477,8 +495,9 @@ private fun GeneratedAppRow(
             )
         },
         widget = {
-            Row {
-                TextButton(onClick = onSecondaryAction) { Text(secondaryActionLabel) }
+            if (inProgress) {
+                CircularProgressIndicator(Modifier.size(20.dp))
+            } else {
                 TextButton(onClick = onAction) { Text(actionLabel) }
             }
         },

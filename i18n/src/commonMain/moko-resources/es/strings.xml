@@ -274,6 +274,8 @@
     <string name="pref_standalone_home_mode">Pantalla de inicio</string>
     <string name="pref_standalone_home_mode_feed">Feed (catálogo)</string>
     <string name="pref_standalone_home_mode_new_home">Inicio nuevo</string>
+    <string name="pref_new_home">Inicio nuevo</string>
+    <string name="pref_new_home_summary">Muestra en la barra el inicio tipo Animetail</string>
     <string name="standalone_apps_summary">Convierte una extensión instalada en una app propia</string>
     <string name="standalone_no_extensions">No hay extensiones instaladas</string>
     <string name="standalone_output_folder">Carpeta de salida</string>
@@ -283,6 +285,7 @@
     <string name="standalone_create_app">Crear app</string>
     <string name="standalone_generating">Generando %1$s…</string>
     <string name="standalone_generated">App generada: %1$s</string>
+    <string name="standalone_generated_apps">Apps generadas</string>
     <string name="standalone_error">No se pudo generar la app</string>
     <string name="standalone_open">Abrir</string>
     <string name="standalone_pick_output_first">Elige primero una carpeta de salida</string>
@@ -294,6 +297,7 @@
     <string name="standalone_feed_continue">Continuar viendo y leyendo</string>
     <string name="standalone_feed_recommended">Recomendados para ti</string>
     <string name="standalone_feed_popular">Populares ahora</string>
+    <string name="standalone_feed_trending">Tendencias</string>
     <string name="standalone_feed_settings">Ajustes del feed</string>
     <string name="standalone_feed_only_available">Solo títulos de esta fuente</string>
     <string name="standalone_feed_auto_scroll">Desplazamiento automático de destacados</string>

@@ -97,6 +97,13 @@ fun StandaloneHomeFeedScreen(
     requestSettings: Boolean = false,
     onSettingsHandled: () -> Unit = {},
 ) {
+    // A generated app has one bundled extension: its Home is catalogue-backed and never shows the
+    // global, multi-source feed (or its global feed settings).
+    if (StandaloneScope.isActive) {
+        StandaloneLocalHomeFeedScreen(screenModel, modifier)
+        return
+    }
+
     val state by screenModel.state.collectAsState()
     val navigator = LocalNavigator.currentOrThrow
     val context = LocalContext.current

@@ -44,6 +44,9 @@ class UiPreferences(
 
     fun startScreen() = preferenceStore.getEnum("start_screen", StartScreen.ANIME)
 
+    // Host only: the Animetail-style Home feed can be hidden from the navigation bar.
+    fun newHomeEnabled() = preferenceStore.getBoolean("pref_new_home_enabled", true)
+
     fun bottomNavTabs() = preferenceStore.getStringSet("bottom_nav_tabs", NavTab.DEFAULT)
 
     // Which Manga/Anime sub-tabs are shown (and the default) in Updates/History/Browse.

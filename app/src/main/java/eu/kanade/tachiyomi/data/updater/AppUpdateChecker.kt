@@ -11,7 +11,11 @@ class AppUpdateChecker {
 
     private val getApplicationRelease: GetApplicationRelease by injectLazy()
 
-    suspend fun checkForUpdate(context: Context, forceCheck: Boolean = false): GetApplicationRelease.Result {
+    suspend fun checkForUpdate(
+        context: Context,
+        forceCheck: Boolean = false,
+        notify: Boolean = true,
+    ): GetApplicationRelease.Result {
         // Disabling app update checks for older Android versions that we're going to drop support for
         // if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
         //    return GetApplicationRelease.Result.OsTooOld
@@ -28,11 +32,10 @@ class AppUpdateChecker {
                 ),
             )
 
-            when (result) {
-                is GetApplicationRelease.Result.NewUpdate -> AppUpdateNotifier(context).promptUpdate(
-                    result.release,
-                )
-                else -> {}
+            // The About screen starts the download itself, so skip the extra "update available"
+            // notification there. Background checks keep it as their only visible prompt.
+            if (notify && result is GetApplicationRelease.Result.NewUpdate) {
+                AppUpdateNotifier(context).promptUpdate(result.release)
             }
 
             result

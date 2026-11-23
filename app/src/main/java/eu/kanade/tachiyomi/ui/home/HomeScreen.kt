@@ -125,12 +125,14 @@ object HomeScreen : Screen() {
         val tabOrder by uiPreferences.bottomNavOrder().collectAsState()
         val standaloneHomeMode by uiPreferences.standaloneHomeMode().collectAsState()
         val startScreen by uiPreferences.startScreen().collectAsState()
+        val newHomeEnabled by uiPreferences.newHomeEnabled().collectAsState()
         val defaultTab = startScreen.tab
-        // Existing installs do not have "home" in their saved set; the house tab is always shown.
-        val effectiveEnabledTabs = if (StandaloneScope.isActive) {
-            enabledTabs
-        } else {
+        // Existing installs do not have "home" in their saved set, so it used to be force-added.
+        // In the host it is now controlled by the "New Home" switch in Appearance.
+        val effectiveEnabledTabs = if (StandaloneScope.isActive || newHomeEnabled) {
             enabledTabs + NavTab.Home.prefKey
+        } else {
+            enabledTabs
         }
         val standaloneLibraryTab = when (StandaloneScope.kind) {
             StandaloneScope.KIND_MANGA -> MangaLibraryTab
@@ -382,7 +384,11 @@ object HomeScreen : Screen() {
                 launch {
                     openTabEvent.receiveAsFlow().collectLatest {
                         tabNavigator.current = when (it) {
-                            is Tab.Home -> if (StandaloneScope.isActive) StandaloneFeedTab else HomeFeedTab
+                            is Tab.Home -> when {
+                                StandaloneScope.isActive -> StandaloneFeedTab
+                                newHomeEnabled -> HomeFeedTab
+                                else -> homeTab
+                            }
                             is Tab.AnimeLib -> AnimeLibraryTab
                             is Tab.Library -> MangaLibraryTab
                             is Tab.Updates -> UpdatesTab
