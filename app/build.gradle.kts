@@ -66,7 +66,12 @@ android {
         val release by getting {
             isMinifyEnabled = Config.enableCodeShrink
             isShrinkResources = Config.enableCodeShrink
-            signingConfig = signingConfigs.getByName("release")
+            // PR checks build release without a keystore and expect the unsigned APK.
+            // The signed Preview/Stable workflows provide KEYSTORE_FILE.
+            val releaseKeystore = System.getenv("KEYSTORE_FILE")?.let { file(it) } ?: file("release.p12")
+            if (releaseKeystore.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
 
             proguardFiles("proguard-android-optimize.txt", "proguard-rules.pro")
 
