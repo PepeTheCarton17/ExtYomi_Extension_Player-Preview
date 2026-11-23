@@ -158,6 +158,10 @@ fun Screen.standaloneAppsTab(): TabContent {
     )
     val selectedKindIndex = kindLabels.indexOfFirst { it.first == state.kind }.coerceAtLeast(0)
     val selectedKind = kindLabels[selectedKindIndex].first
+    // These labels are needed inside the non-composable LazyListScope builder below.
+    val updatesHeader = stringResource(MR.strings.ext_updates_pending)
+    val installedHeader = stringResource(MR.strings.ext_installed)
+    val generatedHeader = stringResource(MR.strings.standalone_generated_apps)
 
     // One row per generated app, in exactly one section, with exactly one action. Transient
     // phases only swap that action; they never add a second row or a second button.
@@ -295,7 +299,7 @@ fun Screen.standaloneAppsTab(): TabContent {
 
                 appRowsSection(
                     sectionKey = "updates",
-                    header = stringResource(MR.strings.ext_updates_pending),
+                    header = updatesHeader,
                     rows = rows.filter { it.section == AppSection.UPDATES },
                     context = context,
                     screenModel = screenModel,
@@ -303,7 +307,7 @@ fun Screen.standaloneAppsTab(): TabContent {
                 )
                 appRowsSection(
                     sectionKey = "installed",
-                    header = stringResource(MR.strings.ext_installed),
+                    header = installedHeader,
                     rows = rows.filter { it.section == AppSection.INSTALLED },
                     context = context,
                     screenModel = screenModel,
@@ -311,7 +315,7 @@ fun Screen.standaloneAppsTab(): TabContent {
                 )
                 appRowsSection(
                     sectionKey = "generated",
-                    header = stringResource(MR.strings.standalone_generated_apps),
+                    header = generatedHeader,
                     rows = rows.filter { it.section == AppSection.GENERATED },
                     context = context,
                     screenModel = screenModel,
@@ -427,7 +431,6 @@ private fun SectionHeader(text: String) {
     )
 }
 
-@Composable
 private fun LazyListScope.appRowsSection(
     sectionKey: String,
     header: String,

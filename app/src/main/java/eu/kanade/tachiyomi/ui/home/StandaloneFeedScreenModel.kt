@@ -3,9 +3,7 @@ package eu.kanade.tachiyomi.ui.home
 import androidx.compose.runtime.Immutable
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
-import eu.kanade.domain.entries.anime.interactor.NetworkToLocalAnime
 import eu.kanade.domain.entries.anime.model.toDomainAnime
-import eu.kanade.domain.entries.manga.interactor.NetworkToLocalManga
 import eu.kanade.domain.entries.manga.model.toDomainManga
 import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.tachiyomi.animesource.AnimeCatalogueSource
@@ -30,6 +28,8 @@ import logcat.LogPriority
 import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.core.common.util.system.logcat
+import tachiyomi.domain.entries.anime.interactor.NetworkToLocalAnime
+import tachiyomi.domain.entries.manga.interactor.NetworkToLocalManga
 import tachiyomi.domain.history.anime.interactor.GetAnimeHistory
 import tachiyomi.domain.history.manga.interactor.GetMangaHistory
 import tachiyomi.domain.source.anime.service.AnimeSourceManager
@@ -520,8 +520,10 @@ private fun animeCategoryNames(source: AnimeCatalogueSource): List<String> = bui
             is AnimeFilter.Group<*> -> filter.state.forEach { child ->
                 if (child is AnimeFilter<*>) {
                     val name = child.name
-                    if (name.isNotBlank() && child !is AnimeFilter.Header &&
-                        child !is AnimeFilter.Separator && !isTrendingName(name)
+                    if (name.isNotBlank() &&
+                        child !is AnimeFilter.Header &&
+                        child !is AnimeFilter.Separator &&
+                        !isTrendingName(name)
                     ) {
                         add(name)
                     }
@@ -541,8 +543,10 @@ private fun mangaCategoryNames(source: CatalogueSource): List<String> = buildLis
             is Filter.Group<*> -> filter.state.forEach { child ->
                 if (child is Filter<*>) {
                     val name = child.name
-                    if (name.isNotBlank() && child !is Filter.Header &&
-                        child !is Filter.Separator && !isTrendingName(name)
+                    if (name.isNotBlank() &&
+                        child !is Filter.Header &&
+                        child !is Filter.Separator &&
+                        !isTrendingName(name)
                     ) {
                         add(name)
                     }
