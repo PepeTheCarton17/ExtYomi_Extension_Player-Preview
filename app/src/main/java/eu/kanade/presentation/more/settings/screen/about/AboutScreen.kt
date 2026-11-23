@@ -218,7 +218,7 @@ object AboutScreen : Screen() {
     fun getVersionName(withBuildDate: Boolean): String {
         return when {
             BuildConfig.DEBUG -> {
-                "Debug ${BuildConfig.COMMIT_SHA}".let {
+                "Debug v${BuildConfig.VERSION_NAME} (${BuildConfig.COMMIT_SHA})".let {
                     if (withBuildDate) {
                         "$it (${getFormattedBuildTime()})"
                     } else {
@@ -227,16 +227,16 @@ object AboutScreen : Screen() {
                 }
             }
             isPreviewBuildType -> {
-                "Preview r${BuildConfig.COMMIT_COUNT}".let {
+                "Preview v${BuildConfig.VERSION_NAME} (${BuildConfig.COMMIT_SHA}, ${BuildConfig.VERSION_CODE})".let {
                     if (withBuildDate) {
-                        "$it (${BuildConfig.COMMIT_SHA}, ${getFormattedBuildTime()})"
+                        "$it (${getFormattedBuildTime()})"
                     } else {
-                        "$it (${BuildConfig.COMMIT_SHA})"
+                        it
                     }
                 }
             }
             else -> {
-                "Stable ${BuildConfig.VERSION_NAME}".let {
+                "Stable v${BuildConfig.VERSION_NAME}".let {
                     if (withBuildDate) {
                         "$it (${getFormattedBuildTime()})"
                     } else {

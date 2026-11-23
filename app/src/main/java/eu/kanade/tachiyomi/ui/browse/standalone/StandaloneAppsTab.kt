@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.GetApp
@@ -337,18 +338,19 @@ fun Screen.standaloneAppsTab(): TabContent {
                     }
                 }
 
-                items(
+                itemsIndexed(
                     items = state.items,
-                    contentType = {
-                        if (it is StandaloneSourceUiModel.Header) "header" else "item"
+                    contentType = { _, model ->
+                        if (model is StandaloneSourceUiModel.Header) "header" else "item"
                     },
-                    key = {
-                        when (it) {
-                            is StandaloneSourceUiModel.Header -> "source-header-${it.language}"
-                            is StandaloneSourceUiModel.Item -> "source-${it.app.kind}-${it.app.sourceId}"
+                    key = { index, model ->
+                        when (model) {
+                            is StandaloneSourceUiModel.Header -> "source-header-${model.language}"
+                            is StandaloneSourceUiModel.Item ->
+                                "source-${model.app.kind}-${model.app.sourceId}-${model.app.extensionPkg}-$index"
                         }
                     },
-                ) { model ->
+                ) { _, model ->
                     when (model) {
                         is StandaloneSourceUiModel.Header -> {
                             SectionHeader(
