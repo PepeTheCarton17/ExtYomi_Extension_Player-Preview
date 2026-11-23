@@ -11,6 +11,7 @@ import androidx.compose.ui.platform.LocalContext
 import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.TabOptions
+import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.domain.ui.model.HomeTabsMode
 import eu.kanade.domain.ui.model.NavTab
@@ -49,32 +50,44 @@ data object UpdatesTab : Tab {
         val context = LocalContext.current
         val enabledTabs = currentBottomNavTabs()
         val fromMore = NavTab.Updates.prefKey !in enabledTabs
+        val animeScope = StandaloneScope.appliesTo(StandaloneScope.KIND_ANIME)
+        val novelScope = StandaloneScope.appliesTo(StandaloneScope.KIND_NOVEL)
         // Show a dedicated "Novels" updates feed (novels are excluded from the manga one) when the
-        // user actually uses novels, i.e. has the Novel tab enabled.
-        val showNovel = NavTab.Novel.prefKey in enabledTabs
-        val mode = remember { Injekt.get<UiPreferences>() }.homeTabsMode().get()
+        // user actually uses novels, i.e. has the Novel tab enabled. A standalone app is scoped to
+        // one kind, so never offer the other kinds there.
+        val showNovel = !StandaloneScope.isActive && NavTab.Novel.prefKey in enabledTabs
+        val savedMode = remember { Injekt.get<UiPreferences>() }.homeTabsMode().get()
+        val mode = when {
+            animeScope -> HomeTabsMode.ANIME_ONLY
+            StandaloneScope.appliesTo(StandaloneScope.KIND_MANGA) || novelScope ->
+                HomeTabsMode.MANGA_ONLY
+            else -> savedMode
+        }
 
-        val tabs = when (mode) {
-            HomeTabsMode.ANIME_ONLY -> persistentListOf(animeUpdatesTab(context, fromMore))
-            HomeTabsMode.MANGA_ONLY -> if (showNovel) {
-                persistentListOf(
-                    mangaUpdatesTab(context, fromMore),
-                    mangaUpdatesTab(context, fromMore, novelOnly = true),
-                )
-            } else {
-                persistentListOf(mangaUpdatesTab(context, fromMore))
-            }
-            else -> if (showNovel) {
-                persistentListOf(
-                    animeUpdatesTab(context, fromMore),
-                    mangaUpdatesTab(context, fromMore),
-                    mangaUpdatesTab(context, fromMore, novelOnly = true),
-                )
-            } else {
-                persistentListOf(
-                    animeUpdatesTab(context, fromMore),
-                    mangaUpdatesTab(context, fromMore),
-                )
+        val tabs = when {
+            novelScope -> persistentListOf(mangaUpdatesTab(context, fromMore, novelOnly = true))
+            else -> when (mode) {
+                HomeTabsMode.ANIME_ONLY -> persistentListOf(animeUpdatesTab(context, fromMore))
+                HomeTabsMode.MANGA_ONLY -> if (showNovel) {
+                    persistentListOf(
+                        mangaUpdatesTab(context, fromMore),
+                        mangaUpdatesTab(context, fromMore, novelOnly = true),
+                    )
+                } else {
+                    persistentListOf(mangaUpdatesTab(context, fromMore))
+                }
+                else -> if (showNovel) {
+                    persistentListOf(
+                        animeUpdatesTab(context, fromMore),
+                        mangaUpdatesTab(context, fromMore),
+                        mangaUpdatesTab(context, fromMore, novelOnly = true),
+                    )
+                } else {
+                    persistentListOf(
+                        animeUpdatesTab(context, fromMore),
+                        mangaUpdatesTab(context, fromMore),
+                    )
+                }
             }
         }
 

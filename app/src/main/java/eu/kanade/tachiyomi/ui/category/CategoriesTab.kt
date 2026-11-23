@@ -10,6 +10,7 @@ import androidx.compose.ui.platform.LocalContext
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.TabOptions
+import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.presentation.components.TabbedScreen
 import eu.kanade.presentation.util.Tab
 import eu.kanade.tachiyomi.R
@@ -59,11 +60,16 @@ data object CategoriesTab : Tab {
         val mangaCategoryScreenModel = rememberScreenModel { MangaCategoryScreenModel() }
         val novelCategoryScreenModel = rememberScreenModel { NovelCategoryScreenModel() }
 
-        val tabs = persistentListOf(
-            animeCategoryTab(),
-            mangaCategoryTab(),
-            novelCategoryTab(),
-        )
+        val tabs = when {
+            StandaloneScope.appliesTo(StandaloneScope.KIND_ANIME) -> persistentListOf(animeCategoryTab())
+            StandaloneScope.appliesTo(StandaloneScope.KIND_NOVEL) -> persistentListOf(novelCategoryTab())
+            StandaloneScope.appliesTo(StandaloneScope.KIND_MANGA) -> persistentListOf(mangaCategoryTab())
+            else -> persistentListOf(
+                animeCategoryTab(),
+                mangaCategoryTab(),
+                novelCategoryTab(),
+            )
+        }
 
         val state = rememberPagerState { tabs.size }
 
@@ -74,7 +80,7 @@ data object CategoriesTab : Tab {
         )
         LaunchedEffect(Unit) {
             switchToMangaCategoryTabChannel.receiveAsFlow()
-                .collectLatest { state.scrollToPage(1) }
+                .collectLatest { state.scrollToPage(1.coerceAtMost(tabs.lastIndex)) }
         }
 
         LaunchedEffect(Unit) {

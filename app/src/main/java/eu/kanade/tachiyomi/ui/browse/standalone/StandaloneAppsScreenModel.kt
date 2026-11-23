@@ -8,12 +8,15 @@ import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import eu.kanade.domain.extension.anime.interactor.GetAnimeExtensionsByType
 import eu.kanade.domain.extension.manga.interactor.GetMangaExtensionsByType
+import eu.kanade.domain.source.interactor.ToggleLanguage
+import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.tachiyomi.ui.reader.loader.NovelSourceCompat
 import eu.kanade.tachiyomi.util.standalone.StandaloneAppGenerator
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
+import tachiyomi.core.common.preference.getAndSet
 import tachiyomi.core.common.util.lang.launchIO
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -21,6 +24,8 @@ import uy.kohesive.injekt.api.get
 class StandaloneAppsScreenModel(
     private val getAnimeExtensions: GetAnimeExtensionsByType = Injekt.get(),
     private val getMangaExtensions: GetMangaExtensionsByType = Injekt.get(),
+    private val preferences: SourcePreferences = Injekt.get(),
+    private val languageToggle: ToggleLanguage = Injekt.get(),
 ) : StateScreenModel<StandaloneAppsScreenModel.State>(State()) {
 
     init {
@@ -28,45 +33,62 @@ class StandaloneAppsScreenModel(
             combine(
                 getAnimeExtensions.subscribe(),
                 getMangaExtensions.subscribe(),
-            ) { anime, manga ->
+                preferences.enabledLanguages().changes(),
+                preferences.pinnedAnimeSources().changes(),
+                preferences.pinnedMangaSources().changes(),
+            ) { anime, manga, enabledLanguages, pinnedAnime, pinnedManga ->
                 buildList {
                     anime.installed.forEach { extension ->
-                        extension.sources.forEach { source ->
-                            add(
-                                StandaloneExtensionItem(
-                                    name = extension.name,
-                                    sourceName = source.name,
-                                    sourceId = source.id,
-                                    kind = StandaloneScope.KIND_ANIME,
-                                    extensionPkg = extension.pkgName,
-                                    extensionVersionName = extension.versionName,
-                                    extensionVersionCode = extension.versionCode,
-                                    icon = extension.icon,
-                                ),
-                            )
-                        }
+                        // One app per extension, not one per source: a multi-source extension used to
+                        // produce N visually identical rows and N APKs with the same file name.
+                        val source = extension.sources.firstOrNull() ?: return@forEach
+                        add(
+                            StandaloneExtensionItem(
+                                name = extension.name,
+                                sourceName = source.name,
+                                sourceId = source.id,
+                                kind = StandaloneScope.KIND_ANIME,
+                                extensionPkg = extension.pkgName,
+                                extensionVersionName = extension.versionName,
+                                extensionVersionCode = extension.versionCode,
+                                icon = extension.icon,
+                                lang = source.lang.ifBlank { extension.lang },
+                                isPinned = source.id.toString() in pinnedAnime,
+                                sourceCount = extension.sources.size,
+                            ),
+                        )
                     }
-                    manga.installed
-                        .filterNot { NovelSourceCompat.isNovelExtensionPkg(it.pkgName) }
-                        .forEach { extension ->
-                            extension.sources.forEach { source ->
-                                add(
-                                    StandaloneExtensionItem(
-                                        name = extension.name,
-                                        sourceName = source.name,
-                                        sourceId = source.id,
-                                        kind = StandaloneScope.KIND_MANGA,
-                                        extensionPkg = extension.pkgName,
-                                        extensionVersionName = extension.versionName,
-                                        extensionVersionCode = extension.versionCode,
-                                        icon = extension.icon,
-                                    ),
-                                )
-                            }
-                        }
-                }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
-            }.collectLatest { items ->
-                mutableState.update { it.copy(isLoading = false, items = items) }
+                    manga.installed.forEach { extension ->
+                        val source = extension.sources.firstOrNull() ?: return@forEach
+                        val isNovel = NovelSourceCompat.isNovelExtensionPkg(extension.pkgName)
+                        add(
+                            StandaloneExtensionItem(
+                                name = extension.name,
+                                sourceName = source.name,
+                                sourceId = source.id,
+                                kind = if (isNovel) {
+                                    StandaloneScope.KIND_NOVEL
+                                } else {
+                                    StandaloneScope.KIND_MANGA
+                                },
+                                extensionPkg = extension.pkgName,
+                                extensionVersionName = extension.versionName,
+                                extensionVersionCode = extension.versionCode,
+                                icon = extension.icon,
+                                lang = source.lang.ifBlank { extension.lang },
+                                isPinned = source.id.toString() in pinnedManga,
+                                sourceCount = extension.sources.size,
+                            ),
+                        )
+                    }
+                }
+                    // Language filtering lives in the UI so a disabled language can still be
+                    // re-enabled from the chips at the top of the list.
+                    .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name }) to enabledLanguages
+            }.collectLatest { (items, languages) ->
+                mutableState.update {
+                    it.copy(isLoading = false, items = items, enabledLanguages = languages)
+                }
             }
         }
     }
@@ -88,10 +110,25 @@ class StandaloneAppsScreenModel(
         }
     }
 
+    fun togglePin(item: StandaloneExtensionItem) {
+        val pinned = if (item.kind == StandaloneScope.KIND_ANIME) {
+            preferences.pinnedAnimeSources()
+        } else {
+            preferences.pinnedMangaSources()
+        }
+        val id = item.sourceId.toString()
+        pinned.getAndSet { if (id in it) it - id else it + id }
+    }
+
+    fun toggleLanguage(language: String) {
+        languageToggle.await(language)
+    }
+
     @Immutable
     data class State(
         val isLoading: Boolean = true,
         val items: List<StandaloneExtensionItem> = emptyList(),
+        val enabledLanguages: Set<String> = emptySet(),
         val status: Status? = null,
     )
 
@@ -112,4 +149,8 @@ data class StandaloneExtensionItem(
     val extensionVersionName: String,
     val extensionVersionCode: Long,
     val icon: Drawable?,
+    val lang: String = "",
+    val isPinned: Boolean = false,
+    /** Number of sources in this extension. The generated app is locked to [sourceId]. */
+    val sourceCount: Int = 1,
 )

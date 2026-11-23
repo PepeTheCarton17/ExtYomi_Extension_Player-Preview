@@ -14,6 +14,7 @@ import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.TabOptions
+import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.domain.ui.model.HomeTabsMode
 import eu.kanade.domain.ui.model.NavTab
@@ -55,10 +56,19 @@ data object HistoriesTab : Tab {
         val context = LocalContext.current
         val enabledTabs = currentBottomNavTabs()
         val fromMore = NavTab.History.prefKey !in enabledTabs
+        val animeScope = StandaloneScope.appliesTo(StandaloneScope.KIND_ANIME)
+        val mangaScope = StandaloneScope.appliesTo(StandaloneScope.KIND_MANGA)
+        val novelScope = StandaloneScope.appliesTo(StandaloneScope.KIND_NOVEL)
         // Show a dedicated "Novels" history feed (novels are excluded from the manga one) when the
-        // user actually uses novels, i.e. has the Novel tab enabled.
-        val showNovel = NavTab.Novel.prefKey in enabledTabs
-        val mode = remember { Injekt.get<UiPreferences>() }.homeTabsMode().get()
+        // user actually uses novels, i.e. has the Novel tab enabled. A standalone app is scoped to
+        // one kind, so never offer the other kinds there.
+        val showNovel = !StandaloneScope.isActive && NavTab.Novel.prefKey in enabledTabs
+        val savedMode = remember { Injekt.get<UiPreferences>() }.homeTabsMode().get()
+        val mode = when {
+            animeScope -> HomeTabsMode.ANIME_ONLY
+            mangaScope || novelScope -> HomeTabsMode.MANGA_ONLY
+            else -> savedMode
+        }
         // Hoisted for history tab's search bar
         val mangaHistoryScreenModel = rememberScreenModel { MangaHistoryScreenModel() }
         val mangaSearchQuery by mangaHistoryScreenModel.query.collectAsState()
@@ -66,27 +76,30 @@ data object HistoriesTab : Tab {
         val animeHistoryScreenModel = rememberScreenModel { AnimeHistoryScreenModel() }
         val animeSearchQuery by animeHistoryScreenModel.query.collectAsState()
 
-        val tabs = when (mode) {
-            HomeTabsMode.ANIME_ONLY -> persistentListOf(animeHistoryTab(context, fromMore))
-            HomeTabsMode.MANGA_ONLY -> if (showNovel) {
-                persistentListOf(
-                    mangaHistoryTab(context, fromMore),
-                    mangaHistoryTab(context, fromMore, novelOnly = true),
-                )
-            } else {
-                persistentListOf(mangaHistoryTab(context, fromMore))
-            }
-            else -> if (showNovel) {
-                persistentListOf(
-                    animeHistoryTab(context, fromMore),
-                    mangaHistoryTab(context, fromMore),
-                    mangaHistoryTab(context, fromMore, novelOnly = true),
-                )
-            } else {
-                persistentListOf(
-                    animeHistoryTab(context, fromMore),
-                    mangaHistoryTab(context, fromMore),
-                )
+        val tabs = when {
+            novelScope -> persistentListOf(mangaHistoryTab(context, fromMore, novelOnly = true))
+            else -> when (mode) {
+                HomeTabsMode.ANIME_ONLY -> persistentListOf(animeHistoryTab(context, fromMore))
+                HomeTabsMode.MANGA_ONLY -> if (showNovel) {
+                    persistentListOf(
+                        mangaHistoryTab(context, fromMore),
+                        mangaHistoryTab(context, fromMore, novelOnly = true),
+                    )
+                } else {
+                    persistentListOf(mangaHistoryTab(context, fromMore))
+                }
+                else -> if (showNovel) {
+                    persistentListOf(
+                        animeHistoryTab(context, fromMore),
+                        mangaHistoryTab(context, fromMore),
+                        mangaHistoryTab(context, fromMore, novelOnly = true),
+                    )
+                } else {
+                    persistentListOf(
+                        animeHistoryTab(context, fromMore),
+                        mangaHistoryTab(context, fromMore),
+                    )
+                }
             }
         }
         // TabbedScreen maps the search query by currentPage % 2 (anime = even). A lone manga tab sits at

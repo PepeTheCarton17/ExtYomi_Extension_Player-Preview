@@ -1,8 +1,11 @@
 # Apps independientes
 
 ExtYomi sigue siendo un fork de Nekoyomi. La novedad es el apartado **Explorar → Apps independientes**,
-junto a Fuentes, Extensiones y Migrar. Lista las extensiones instaladas (anime y manga; novelas se
-añadirán después) y permite convertir una de ellas en una app aparte.
+junto a Fuentes, Extensiones y Migrar. Lista las extensiones instaladas agrupadas por tipo
+(**Anime / Manga / Novelas**) y permite convertir una de ellas en una app aparte. Al igual que en
+Fuentes, hay una sección de ancladas, agrupación por idioma y chips para activar/desactivar idiomas.
+Cada extensión ocupa una sola fila aunque exponga varias fuentes. La generación de apps de novelas
+todavía no está disponible; la categoría se muestra pero el botón está deshabilitado.
 
 ## Qué genera el botón «Crear app»
 
@@ -48,5 +51,5 @@ fuente. La extensión debe seguir instalada en el dispositivo.
 - El APK se escribe primero en `cacheDir` privado y solo se copia al árbol SAF seleccionado.
 - No se redistribuyen APKs de terceros: solo se reempaqueta el propio fork.
 - La instalación queda en manos del usuario (el botón descarga/genera, no instala).
-- v1 cubre anime y manga; novelas vendrán después.
+- v1 cubre anime y manga; las novelas se listan en su propia categoría pero aún no se pueden generar.
 - El recorte de código DEX/Retail no se hace en v1: el aislamiento es de navegación y datos.

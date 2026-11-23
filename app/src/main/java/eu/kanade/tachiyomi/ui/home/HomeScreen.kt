@@ -77,6 +77,7 @@ import eu.kanade.tachiyomi.ui.entries.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.history.HistoriesTab
 import eu.kanade.tachiyomi.ui.library.anime.AnimeLibraryTab
 import eu.kanade.tachiyomi.ui.library.manga.MangaLibraryTab
+import eu.kanade.tachiyomi.ui.library.manga.NovelLibraryTab
 import eu.kanade.tachiyomi.ui.more.MoreTab
 import eu.kanade.tachiyomi.ui.updates.UpdatesTab
 import kotlinx.coroutines.channels.Channel
@@ -124,30 +125,37 @@ object HomeScreen : Screen() {
     override fun Content() {
         val enabledTabs by uiPreferences.bottomNavTabs().collectAsState()
         val tabOrder by uiPreferences.bottomNavOrder().collectAsState()
+        val standaloneLibraryTab = when (StandaloneScope.kind) {
+            StandaloneScope.KIND_MANGA -> MangaLibraryTab
+            StandaloneScope.KIND_NOVEL -> NovelLibraryTab
+            else -> AnimeLibraryTab
+        }
         val shownTabs = if (StandaloneScope.isActive) {
             // A standalone app keeps only its feed, library and settings.
             buildList {
                 add(StandaloneFeedTab)
-                add(
-                    if (StandaloneScope.kind == StandaloneScope.KIND_MANGA) {
-                        MangaLibraryTab
-                    } else {
-                        AnimeLibraryTab
-                    },
-                )
+                add(standaloneLibraryTab)
                 add(MoreTab)
             }
         } else {
             NavTab.shownTabs(enabledTabs, tabOrder)
         }
-        val hiddenTabs = NavTab.hidden(enabledTabs).map { it.tab }
-        val homeTab = if (StandaloneScope.isActive) {
-            val libraryTab = if (StandaloneScope.kind == StandaloneScope.KIND_MANGA) {
-                MangaLibraryTab
-            } else {
-                AnimeLibraryTab
+        val hiddenTabs = NavTab.hidden(enabledTabs)
+            .filter { navTab ->
+                // A standalone app must not offer navigation into the other content kinds.
+                when {
+                    StandaloneScope.appliesTo(StandaloneScope.KIND_ANIME) ->
+                        navTab != NavTab.Manga && navTab != NavTab.Novel
+                    StandaloneScope.appliesTo(StandaloneScope.KIND_MANGA) ->
+                        navTab != NavTab.Anime && navTab != NavTab.Novel
+                    StandaloneScope.appliesTo(StandaloneScope.KIND_NOVEL) ->
+                        navTab != NavTab.Anime && navTab != NavTab.Manga
+                    else -> true
+                }
             }
-            if (standaloneHomeMode == StandaloneHomeMode.FEED) StandaloneFeedTab else libraryTab
+            .map { it.tab }
+        val homeTab = if (StandaloneScope.isActive) {
+            if (standaloneHomeMode == StandaloneHomeMode.FEED) StandaloneFeedTab else standaloneLibraryTab
         } else {
             // The start-screen tab may have been hidden; fall back to the first shown tab.
             defaultTab.takeIf { it in shownTabs } ?: shownTabs.first()

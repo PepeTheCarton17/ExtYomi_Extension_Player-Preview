@@ -21,6 +21,8 @@ object StandaloneScope {
 
     const val KIND_ANIME = "anime"
     const val KIND_MANGA = "manga"
+    /** Shown as a separate category in the generator; standalone generation is not supported yet. */
+    const val KIND_NOVEL = "novel"
     const val CONFIG_ASSET = "standalone_config.json"
 
     private val preferences: UiPreferences
@@ -68,7 +70,7 @@ object StandaloneScope {
         when (kind) {
             KIND_ANIME -> Injekt.get<TrustAnimeExtension>()
                 .trust(extensionPkg, versionCode, signatureHash)
-            KIND_MANGA -> Injekt.get<TrustMangaExtension>()
+            KIND_MANGA, KIND_NOVEL -> Injekt.get<TrustMangaExtension>()
                 .trust(extensionPkg, versionCode, signatureHash)
         }
     }

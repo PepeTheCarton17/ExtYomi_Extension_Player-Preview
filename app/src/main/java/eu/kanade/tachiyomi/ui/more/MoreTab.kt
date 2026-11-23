@@ -72,7 +72,9 @@ data object MoreTab : Tab {
                 StandaloneScope.appliesTo(StandaloneScope.KIND_ANIME) ->
                     navTab != NavTab.Manga && navTab != NavTab.Novel
                 StandaloneScope.appliesTo(StandaloneScope.KIND_MANGA) ->
-                    navTab != NavTab.Anime
+                    navTab != NavTab.Anime && navTab != NavTab.Novel
+                StandaloneScope.appliesTo(StandaloneScope.KIND_NOVEL) ->
+                    navTab != NavTab.Anime && navTab != NavTab.Manga
                 else -> true
             }
         }
@@ -90,7 +92,8 @@ data object MoreTab : Tab {
             onClickStorage = { navigator.push(StorageTab) },
             onClickDataAndStorage = { navigator.push(SettingsScreen(SettingsScreen.Destination.DataAndStorage)) },
             onClickPlayerSettings = { navigator.push(PlayerSettingsScreen(mainSettings = false)) },
-            showPlayerSettings = !StandaloneScope.appliesTo(StandaloneScope.KIND_MANGA),
+            showPlayerSettings = !StandaloneScope.appliesTo(StandaloneScope.KIND_MANGA) &&
+                !StandaloneScope.appliesTo(StandaloneScope.KIND_NOVEL),
             onClickSettings = { navigator.push(SettingsScreen()) },
             onClickAbout = { navigator.push(SettingsScreen(SettingsScreen.Destination.About)) },
         )

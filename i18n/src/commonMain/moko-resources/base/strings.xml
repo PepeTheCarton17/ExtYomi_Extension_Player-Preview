@@ -51,6 +51,7 @@
     <string name="standalone_generated">App generated: %1$s</string>
     <string name="standalone_error">Could not generate the app</string>
     <string name="standalone_pick_output_first">Choose an output folder first</string>
+    <string name="standalone_novel_not_supported">Standalone apps for novels are not supported yet</string>
     <string name="label_extension_info">Extension info</string>
     <string name="label_help">Help</string>
     <string name="label_default">Default</string>

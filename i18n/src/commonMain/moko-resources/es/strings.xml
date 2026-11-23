@@ -283,6 +283,7 @@
     <string name="standalone_generated">App generada: %1$s</string>
     <string name="standalone_error">No se pudo generar la app</string>
     <string name="standalone_pick_output_first">Elige primero una carpeta de salida</string>
+    <string name="standalone_novel_not_supported">Las apps independientes de novelas aún no son compatibles</string>
     <string name="label_extension_info">Información de la extensión</string>
     <string name="ext_update">Actualizar</string>
     <string name="ext_install">Instalar</string>
