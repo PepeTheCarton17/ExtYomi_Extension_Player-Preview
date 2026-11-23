@@ -322,8 +322,15 @@ class MangaLibraryUpdateJob(private val context: Context, workerParams: WorkerPa
                                                 downloadChapters(manga, chaptersToDownload)
                                                 hasDownloads.set(true)
                                             }
-                                            libraryPreferences.newMangaUpdatesCount()
-                                                .getAndSet { it + newChapters.size }
+                                            // Novels share this job with manga, but they must not
+                                            // inflate the manga update badge (or be cleared from it).
+                                            if (manga.isNovel) {
+                                                libraryPreferences.newNovelUpdatesCount()
+                                                    .getAndSet { it + newChapters.size }
+                                            } else {
+                                                libraryPreferences.newMangaUpdatesCount()
+                                                    .getAndSet { it + newChapters.size }
+                                            }
 
                                             // Convert to the manga that contains new chapters
                                             newUpdates.add(manga to newChapters.toTypedArray())

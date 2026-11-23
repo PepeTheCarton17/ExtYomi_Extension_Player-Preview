@@ -364,7 +364,12 @@ class MangaUpdatesScreenModel(
     }
 
     fun resetNewUpdatesCount() {
-        libraryPreferences.newMangaUpdatesCount().set(0)
+        // Each sub-tab clears only its own counter; opening novels must not clear manga updates.
+        if (novelOnly) {
+            libraryPreferences.newNovelUpdatesCount().set(0)
+        } else {
+            libraryPreferences.newMangaUpdatesCount().set(0)
+        }
     }
 
     @Immutable

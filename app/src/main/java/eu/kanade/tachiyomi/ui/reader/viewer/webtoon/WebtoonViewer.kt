@@ -17,12 +17,12 @@ import eu.kanade.tachiyomi.ui.reader.model.ChapterTransition
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
 import eu.kanade.tachiyomi.ui.reader.model.ViewerChapters
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
+import eu.kanade.tachiyomi.ui.reader.viewer.AutoScrollFrameClock
 import eu.kanade.tachiyomi.ui.reader.viewer.Viewer
 import eu.kanade.tachiyomi.ui.reader.viewer.ViewerNavigation.NavigationRegion
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import tachiyomi.core.common.util.system.logcat
@@ -82,6 +82,8 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
 
     /** Non-null while auto-scroll is running. */
     private var autoScrollJob: Job? = null
+
+    private val autoScrollClock = AutoScrollFrameClock()
 
     // Whether the user has auto-scroll turned on. A manual drag suspends the running job but keeps
     // this true so auto-scroll resumes when the drag ends; a tap or the toggle clears it.
@@ -333,7 +335,8 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
 
     /**
      * Toggles webtoon auto-scroll and returns whether it is now running. The scroll speed follows the
-     * [ReaderPreferences.webtoonAutoScrollSpeed] preference (re-read every frame so it can be changed live).
+     * [ReaderPreferences.webtoonAutoScrollSpeed] preference, refreshed a few times per second so the
+     * slider still responds live without reading SharedPreferences on every frame.
      */
     fun toggleAutoScroll(): Boolean {
         if (autoScrollJob?.isActive == true) stopAutoScroll() else startAutoScroll()
@@ -343,19 +346,26 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
     private fun startAutoScroll() {
         autoScrollEnabled = true
         autoScrollJob?.cancel()
+        autoScrollClock.reset()
         val density = recycler.resources.displayMetrics.density
         autoScrollJob = scope.launch {
             var remainder = 0f
+            var cachedDpPerSecond = 0f
+            var framesUntilSpeedRefresh = 0
             while (isActive) {
-                val level = readerPreferences.webtoonAutoScrollSpeed().get().coerceIn(1, MAX_AUTO_SCROLL_LEVEL)
-                val dpPerSecond = AUTO_SCROLL_MIN_DP_PER_SEC +
-                    (level - 1) * (AUTO_SCROLL_MAX_DP_PER_SEC - AUTO_SCROLL_MIN_DP_PER_SEC) /
-                    (MAX_AUTO_SCROLL_LEVEL - 1)
-                val distance = remainder + dpPerSecond * density * AUTO_SCROLL_FRAME_MS / 1000f
+                val deltaMs = autoScrollClock.awaitFrameDeltaMs()
+                if (framesUntilSpeedRefresh <= 0) {
+                    val level = readerPreferences.webtoonAutoScrollSpeed().get().coerceIn(1, MAX_AUTO_SCROLL_LEVEL)
+                    cachedDpPerSecond = AUTO_SCROLL_MIN_DP_PER_SEC +
+                        (level - 1) * (AUTO_SCROLL_MAX_DP_PER_SEC - AUTO_SCROLL_MIN_DP_PER_SEC) /
+                        (MAX_AUTO_SCROLL_LEVEL - 1)
+                    framesUntilSpeedRefresh = SPEED_REFRESH_FRAMES
+                }
+                framesUntilSpeedRefresh--
+                val distance = remainder + cachedDpPerSecond * density * deltaMs / 1000f
                 val dy = distance.toInt()
                 remainder = distance - dy
                 if (dy != 0) recycler.scrollBy(0, dy)
-                delay(AUTO_SCROLL_FRAME_MS)
             }
         }
     }
@@ -444,4 +454,4 @@ private const val RECYCLER_VIEW_CACHE_SIZE = 4
 private const val MAX_AUTO_SCROLL_LEVEL = 10
 private const val AUTO_SCROLL_MIN_DP_PER_SEC = 25f
 private const val AUTO_SCROLL_MAX_DP_PER_SEC = 400f
-private const val AUTO_SCROLL_FRAME_MS = 16L
+private const val SPEED_REFRESH_FRAMES = 30

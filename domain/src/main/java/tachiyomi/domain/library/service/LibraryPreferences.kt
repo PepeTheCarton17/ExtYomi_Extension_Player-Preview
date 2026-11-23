@@ -214,6 +214,7 @@ class LibraryPreferences(
 
     fun newMangaUpdatesCount() = preferenceStore.getInt("library_unread_updates_count", 0)
     fun newAnimeUpdatesCount() = preferenceStore.getInt("library_unseen_updates_count", 0)
+    fun newNovelUpdatesCount() = preferenceStore.getInt("library_unread_novel_updates_count", 0)
 
     // Mixture Category
 

@@ -306,18 +306,22 @@ fun StandaloneHomeFeedScreen(
                     }
                 }
 
-                feedSection(
-                    enabled = state.showRecommended,
-                    title = stringResource(MR.strings.standalone_feed_recommended),
-                    feedItems = visible.recommended,
-                    onClick = onFeedItemClick,
-                )
-                feedSection(
-                    enabled = state.showPopular,
-                    title = stringResource(MR.strings.standalone_feed_popular),
-                    feedItems = visible.popular,
-                    onClick = onFeedItemClick,
-                )
+                item {
+                    FeedSection(
+                        enabled = state.showRecommended,
+                        title = stringResource(MR.strings.standalone_feed_recommended),
+                        feedItems = visible.recommended,
+                        onClick = onFeedItemClick,
+                    )
+                }
+                item {
+                    FeedSection(
+                        enabled = state.showPopular,
+                        title = stringResource(MR.strings.standalone_feed_popular),
+                        feedItems = visible.popular,
+                        onClick = onFeedItemClick,
+                    )
+                }
 
                 if (visible.trending.isEmpty() && visible.recommended.isEmpty() &&
                     visible.popular.isEmpty() && visible.continueList.isEmpty()
@@ -353,22 +357,20 @@ private fun SectionTitle(title: String) {
 }
 
 @Composable
-private fun androidx.compose.foundation.lazy.LazyListScope.feedSection(
+private fun FeedSection(
     enabled: Boolean,
     title: String,
     feedItems: List<StandaloneFeedScreenModel.FeedItem>,
     onClick: (StandaloneFeedScreenModel.FeedItem) -> Unit,
 ) {
     if (!enabled || feedItems.isEmpty()) return
-    item {
-        SectionTitle(title)
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            items(items = feedItems, key = { "${it.isAnime}-${it.id}" }) { item ->
-                FeedCard(item, onClick = { onClick(item) })
-            }
+    SectionTitle(title)
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        items(items = feedItems, key = { "${it.isAnime}-${it.id}" }) { item ->
+            FeedCard(item, onClick = { onClick(item) })
         }
     }
 }

@@ -9,9 +9,13 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
+import logcat.LogPriority
+import mihon.domain.extensionrepo.manga.repository.MangaExtensionRepoRepository
 import mihon.domain.extensionrepo.model.ExtensionRepo
+import mihon.domain.extensionrepo.service.ExtensionRepoService
 import tachiyomi.core.common.preference.getAndSet
 import tachiyomi.core.common.util.lang.launchIO
+import tachiyomi.core.common.util.system.logcat
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
@@ -24,6 +28,8 @@ import uy.kohesive.injekt.api.get
 class NovelExtensionReposScreenModel(
     private val preferences: SourcePreferences = Injekt.get(),
     private val extensionManager: MangaExtensionManager = Injekt.get(),
+    private val repoService: ExtensionRepoService = Injekt.get(),
+    private val mangaRepoRepository: MangaExtensionRepoRepository = Injekt.get(),
 ) : StateScreenModel<RepoScreenState>(RepoScreenState.Loading) {
 
     private val _events: Channel<RepoEvent> = Channel(Int.MAX_VALUE)
@@ -57,14 +63,35 @@ class NovelExtensionReposScreenModel(
                 return@launchIO
             }
             preferences.novelExtensionRepos().getAndSet { it + url }
+            // Trust is decided against the manga repo table, so register the real fingerprint here.
+            registerTrustFingerprint(url)
             runCatching { extensionManager.findAvailableExtensions() }
         }
     }
 
     fun refreshRepos() {
         screenModelScope.launchIO {
+            // Backfill repos added by older versions, which were stored without a fingerprint.
+            preferences.novelExtensionRepos().get().forEach { registerTrustFingerprint(it) }
             runCatching { extensionManager.findAvailableExtensions() }
         }
+    }
+
+    /**
+     * Novel extensions install through the manga pipeline, whose `TrustMangaExtension` only trusts
+     * fingerprints stored in the manga repo table. A novel repo kept solely as a plain URL therefore
+     * leaves every extension untrusted and its languages disabled. Fetching repo.json and upserting
+     * it into that table grants the same auto-trust as adding the repo from "Manga repos".
+     */
+    private suspend fun registerTrustFingerprint(baseUrl: String) {
+        val repo = runCatching { repoService.fetchRepoDetails(baseUrl) }
+            .getOrNull()
+            ?.takeIf { it.signingKeyFingerprint.isNotBlank() }
+            ?: return
+        runCatching { mangaRepoRepository.upsertRepo(repo) }
+            .onFailure { error ->
+                logcat(LogPriority.WARN, error) { "Failed to register novel repo fingerprint for $baseUrl" }
+            }
     }
 
     fun deleteRepo(baseUrl: String) {

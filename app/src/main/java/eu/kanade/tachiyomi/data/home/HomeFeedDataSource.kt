@@ -85,7 +85,7 @@ class HomeFeedDataSource(
                             .orEmpty(),
                         synopsis = media.description.orEmpty(),
                         format = media.format.orEmpty(),
-                        genres = media.genres,
+                        genres = media.genres.mapNotNull { it },
                     )
                 }
         }
@@ -124,7 +124,8 @@ private data class AniListFeedMedia(
     val averageScore: Int? = null,
     val description: String? = null,
     val format: String? = null,
-    val genres: List<String> = emptyList(),
+    // AniList occasionally includes null entries; don't let one break the whole feed.
+    val genres: List<String?> = emptyList(),
 )
 
 @Serializable

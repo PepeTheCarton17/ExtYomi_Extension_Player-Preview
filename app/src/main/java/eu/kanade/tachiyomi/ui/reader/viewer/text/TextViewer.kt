@@ -16,6 +16,7 @@ import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
 import eu.kanade.tachiyomi.ui.reader.model.ViewerChapters
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
+import eu.kanade.tachiyomi.ui.reader.viewer.AutoScrollFrameClock
 import eu.kanade.tachiyomi.ui.reader.viewer.Viewer
 import eu.kanade.tachiyomi.util.system.isNightMode
 import kotlinx.coroutines.CancellationException
@@ -72,6 +73,8 @@ class TextViewer(private val activity: ReaderActivity) : Viewer {
 
     /** Non-null while auto-scroll is running. */
     private var autoScrollJob: Job? = null
+
+    private val autoScrollClock = AutoScrollFrameClock()
 
     // Whether the user turned auto-scroll on. A manual drag suspends the running job but keeps this
     // true so it resumes when the drag settles; a tap (menu hidden) or the toggle clears it.
@@ -178,16 +181,24 @@ class TextViewer(private val activity: ReaderActivity) : Viewer {
 
     private fun launchAutoScroll() {
         autoScrollJob?.cancel()
+        autoScrollClock.reset()
         val density = recyclerView.resources.displayMetrics.density
         autoScrollJob = scope.launch {
             var remainder = 0f
+            var cachedDpPerSecond = 0f
+            var framesUntilSpeedRefresh = 0
             while (isActive) {
-                val level = readerPreferences.webtoonAutoScrollSpeed().get()
-                    .coerceIn(1, MAX_AUTO_SCROLL_LEVEL)
-                val dpPerSecond = AUTO_SCROLL_MIN_DP_PER_SEC +
-                    (level - 1) * (AUTO_SCROLL_MAX_DP_PER_SEC - AUTO_SCROLL_MIN_DP_PER_SEC) /
-                    (MAX_AUTO_SCROLL_LEVEL - 1)
-                val distance = remainder + dpPerSecond * density * AUTO_SCROLL_FRAME_MS / 1000f
+                val deltaMs = autoScrollClock.awaitFrameDeltaMs()
+                if (framesUntilSpeedRefresh <= 0) {
+                    val level = readerPreferences.webtoonAutoScrollSpeed().get()
+                        .coerceIn(1, MAX_AUTO_SCROLL_LEVEL)
+                    cachedDpPerSecond = AUTO_SCROLL_MIN_DP_PER_SEC +
+                        (level - 1) * (AUTO_SCROLL_MAX_DP_PER_SEC - AUTO_SCROLL_MIN_DP_PER_SEC) /
+                        (MAX_AUTO_SCROLL_LEVEL - 1)
+                    framesUntilSpeedRefresh = SPEED_REFRESH_FRAMES
+                }
+                framesUntilSpeedRefresh--
+                val distance = remainder + cachedDpPerSecond * density * deltaMs / 1000f
                 val dy = distance.toInt()
                 remainder = distance - dy
                 if (dy != 0) {
@@ -202,7 +213,6 @@ class TextViewer(private val activity: ReaderActivity) : Viewer {
                         }
                     }
                 }
-                delay(AUTO_SCROLL_FRAME_MS)
             }
         }
     }
@@ -417,7 +427,7 @@ private class TextPageHolder(
 private const val MAX_AUTO_SCROLL_LEVEL = 10
 private const val AUTO_SCROLL_MIN_DP_PER_SEC = 25f
 private const val AUTO_SCROLL_MAX_DP_PER_SEC = 400f
-private const val AUTO_SCROLL_FRAME_MS = 16L
+private const val SPEED_REFRESH_FRAMES = 30
 private const val SECTION_ADVANCE_DELAY_MS = 400L
 
 // How long auto-scroll waits for the next chapter to load before giving up, and how often it polls.
