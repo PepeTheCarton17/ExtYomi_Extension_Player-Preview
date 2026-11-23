@@ -39,11 +39,13 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
     private val mangaSourceManager: MangaSourceManager = Injekt.get()
 
     private val isStandalone = StandaloneScope.isActive
+
     // In the generator (no standalone config) the feed is global: show both anime and manga.
     private val isAnimeScope = !isStandalone || StandaloneScope.appliesTo(StandaloneScope.KIND_ANIME)
     private val isNovelScope = StandaloneScope.appliesTo(StandaloneScope.KIND_NOVEL)
     private val isMangaContent = !isStandalone ||
-        StandaloneScope.appliesTo(StandaloneScope.KIND_MANGA) || isNovelScope
+        StandaloneScope.appliesTo(StandaloneScope.KIND_MANGA) ||
+        isNovelScope
     private val sourceId = StandaloneScope.sourceId
 
     init {
