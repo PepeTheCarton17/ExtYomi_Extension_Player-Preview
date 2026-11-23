@@ -323,8 +323,10 @@ fun StandaloneHomeFeedScreen(
                     )
                 }
 
-                if (visible.trending.isEmpty() && visible.recommended.isEmpty() &&
-                    visible.popular.isEmpty() && visible.continueList.isEmpty()
+                if (visible.trending.isEmpty() &&
+                    visible.recommended.isEmpty() &&
+                    visible.popular.isEmpty() &&
+                    visible.continueList.isEmpty()
                 ) {
                     item {
                         Text(
