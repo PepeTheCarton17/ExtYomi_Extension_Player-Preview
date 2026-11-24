@@ -102,7 +102,11 @@ data class BrowseMangaSourceScreen(
             return
         }
 
-        val screenModel = rememberScreenModel { BrowseMangaSourceScreenModel(sourceId, listingQuery) }
+        // Key by source: Voyager otherwise reuses one model for every source screen, which lets a
+        // novel source inherit stale manga browsing state.
+        val screenModel = rememberScreenModel("browse-manga-source-$sourceId") {
+            BrowseMangaSourceScreenModel(sourceId, listingQuery)
+        }
         val state by screenModel.state.collectAsState()
 
         val navigator = LocalNavigator.currentOrThrow

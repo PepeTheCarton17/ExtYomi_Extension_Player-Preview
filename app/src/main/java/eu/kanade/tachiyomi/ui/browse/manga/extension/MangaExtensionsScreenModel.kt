@@ -7,7 +7,6 @@ import cafe.adriel.voyager.core.model.screenModelScope
 import dev.icerock.moko.resources.StringResource
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.domain.extension.manga.interactor.GetMangaExtensionsByType
-import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.presentation.components.SEARCH_DEBOUNCE_MILLIS
 import eu.kanade.tachiyomi.extension.InstallStep
 import eu.kanade.tachiyomi.extension.manga.MangaExtensionManager
@@ -36,7 +35,6 @@ import uy.kohesive.injekt.api.get
 import kotlin.time.Duration.Companion.seconds
 
 class MangaExtensionsScreenModel(
-    preferences: SourcePreferences = Injekt.get(),
     basePreferences: BasePreferences = Injekt.get(),
     private val extensionManager: MangaExtensionManager = Injekt.get(),
     private val getExtensions: GetMangaExtensionsByType = Injekt.get(),
@@ -118,7 +116,10 @@ class MangaExtensionsScreenModel(
 
                 val itemsGroups: ItemGroups = mutableMapOf()
 
-                val updates = _updates.filter { packageFilter(it.pkgName) }.filter(queryFilter(searchQuery)).map(
+                // The badge counts only this tab's pending updates. The shared manga-extension
+                // counter includes novel extensions too, which made the Novel tab show Manga's number.
+                val pendingUpdates = _updates.filter { packageFilter(it.pkgName) }
+                val updates = pendingUpdates.filter(queryFilter(searchQuery)).map(
                     extensionMapper(downloads, reposMap),
                 )
                 if (updates.isNotEmpty()) {
@@ -150,23 +151,20 @@ class MangaExtensionsScreenModel(
                     itemsGroups.putAll(languagesWithExtensions)
                 }
 
-                itemsGroups
+                itemsGroups to pendingUpdates.size
             }
-                .collectLatest {
+                .collectLatest { (groups, updateCount) ->
                     mutableState.update { state ->
                         state.copy(
                             isLoading = false,
-                            items = it,
+                            items = groups,
+                            updates = updateCount,
                         )
                     }
                 }
         }
 
         screenModelScope.launchIO { findAvailableExtensions() }
-
-        preferences.mangaExtensionUpdatesCount().changes()
-            .onEach { mutableState.update { state -> state.copy(updates = it) } }
-            .launchIn(screenModelScope)
 
         basePreferences.extensionInstaller().changes()
             .onEach { mutableState.update { state -> state.copy(installer = it) } }

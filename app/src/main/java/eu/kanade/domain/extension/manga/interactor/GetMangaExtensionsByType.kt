@@ -47,7 +47,9 @@ class GetMangaExtensionsByType(
                             ext.copy(
                                 name = it.name,
                                 lang = it.lang,
-                                pkgName = "${ext.pkgName}-${it.id}",
+                                // Include repo and source language so the same package/language listed by
+                                // different repos stays as two entries instead of colliding in distinctBy.
+                                pkgName = "${ext.pkgName}-${it.id}-${it.lang}@${ext.repoUrl}",
                                 sources = listOf(it),
                             )
                         }

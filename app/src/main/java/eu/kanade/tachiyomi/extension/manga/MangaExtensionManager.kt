@@ -68,6 +68,19 @@ class MangaExtensionManager(
     private val availableExtensionsMapFlow = MutableStateFlow(emptyMap<String, MangaExtension.Available>())
     val availableExtensionsFlow = availableExtensionsMapFlow.mapExtensions(scope)
 
+    // A package can be listed by both a manga repo and a novel repo, sometimes with a different
+    // language. Keying available extensions by package alone silently dropped one of the variants.
+    private fun MangaExtension.Available.storageKey(): String =
+        listOf(pkgName, repoUrl, apkUrl.orEmpty(), lang).joinToString("|")
+
+    private fun findAvailableExtension(
+        pkgName: String,
+        repoUrl: String? = null,
+    ): MangaExtension.Available? {
+        val candidates = availableExtensionsMapFlow.value.values.filter { it.pkgName == pkgName }
+        return candidates.firstOrNull { it.repoUrl == repoUrl } ?: candidates.firstOrNull()
+    }
+
     private val untrustedExtensionsMapFlow = MutableStateFlow(emptyMap<String, MangaExtension.Untrusted>())
     val untrustedExtensionsFlow = untrustedExtensionsMapFlow.mapExtensions(scope)
 
@@ -150,7 +163,7 @@ class MangaExtensionManager(
 
         enableAdditionalSubLanguages(extensions)
 
-        availableExtensionsMapFlow.value = extensions.associateBy { it.pkgName }
+        availableExtensionsMapFlow.value = extensions.associateBy { it.storageKey() }
         updatedInstalledExtensionsStatuses(extensions)
         setupAvailableExtensionsSourcesDataMap(extensions)
     }
@@ -202,7 +215,11 @@ class MangaExtensionManager(
         var changed = false
 
         for ((pkgName, extension) in installedExtensionsMap) {
-            val availableExt = availableExtensions.find { it.pkgName == pkgName }
+            // Match the repo the installed extension came from first, so a manga listing cannot
+            // overwrite the update state of a novel extension with the same package name.
+            val availableExt = availableExtensions.find {
+                it.pkgName == pkgName && it.repoUrl == extension.repoUrl
+            } ?: availableExtensions.find { it.pkgName == pkgName }
 
             if (availableExt == null && !extension.isObsolete) {
                 installedExtensionsMap[pkgName] = extension.copy(isObsolete = true)
@@ -247,7 +264,7 @@ class MangaExtensionManager(
      * @param extension The extension to be updated.
      */
     fun updateExtension(extension: MangaExtension.Installed): Flow<InstallStep> {
-        val availableExt = availableExtensionsMapFlow.value[extension.pkgName] ?: return emptyFlow()
+        val availableExt = findAvailableExtension(extension.pkgName, extension.repoUrl) ?: return emptyFlow()
         return installExtension(availableExt)
     }
 
@@ -368,7 +385,7 @@ class MangaExtensionManager(
         availableExtension: MangaExtension.Available? = null,
     ): Boolean {
         val availableExt = availableExtension
-            ?: availableExtensionsMapFlow.value[pkgName]
+            ?: findAvailableExtension(pkgName)
             ?: return false
 
         return (availableExt.versionCode > versionCode || availableExt.libVersion > libVersion)

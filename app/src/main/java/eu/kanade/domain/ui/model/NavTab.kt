@@ -55,11 +55,12 @@ enum class NavTab(
         }
 
     companion object {
-        // Matches the previous default (history is moved into the More tab).
+        // Novels sit beside Anime and Manga in the bottom bar instead of being buried in More.
         val DEFAULT: Set<String> = setOf(
             Home.prefKey,
             Anime.prefKey,
             Manga.prefKey,
+            Novel.prefKey,
             Updates.prefKey,
             Browse.prefKey,
         )

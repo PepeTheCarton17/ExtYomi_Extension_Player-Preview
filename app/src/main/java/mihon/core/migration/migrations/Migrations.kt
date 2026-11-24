@@ -50,4 +50,5 @@ val migrations: List<Migration>
         CategoryPreferencesCleanupMigration(),
         PrefLangMigration(),
         BottomNavTabsMigration(),
+        NovelLibraryTabMigration(),
     )
