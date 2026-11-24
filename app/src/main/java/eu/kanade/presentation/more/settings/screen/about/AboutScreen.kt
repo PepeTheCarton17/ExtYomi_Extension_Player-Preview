@@ -29,7 +29,6 @@ import eu.kanade.presentation.util.LocalBackPress
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.BuildConfig
 import eu.kanade.tachiyomi.data.updater.AppUpdateChecker
-import eu.kanade.tachiyomi.data.updater.AppUpdateDownloadJob
 import eu.kanade.tachiyomi.data.updater.RELEASE_URL
 import eu.kanade.tachiyomi.ui.more.NewUpdateScreen
 import eu.kanade.tachiyomi.util.CrashLogUtil
@@ -119,16 +118,9 @@ object AboutScreen : Screen() {
                                         checkVersion(
                                             context = context,
                                             onAvailableUpdate = { result ->
-                                                // "Check for updates" is the only action the user
-                                                // expects on a phone/WSA: start the download now
-                                                // instead of only pushing a prompt that requires a
-                                                // second tap. WorkManager replaces any queued job,
-                                                // so this cannot download the APK twice.
-                                                AppUpdateDownloadJob.start(
-                                                    context,
-                                                    result.release.downloadLink,
-                                                    result.release.version,
-                                                )
+                                                // NewUpdateScreen starts the download and shows its
+                                                // progress in-app, so this works even when the user
+                                                // has not granted notification permission.
                                                 val updateScreen = NewUpdateScreen(
                                                     versionName = result.release.version,
                                                     changelogInfo = result.release.info,
