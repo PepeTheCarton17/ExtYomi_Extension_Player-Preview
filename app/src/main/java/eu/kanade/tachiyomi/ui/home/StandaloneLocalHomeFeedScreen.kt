@@ -82,12 +82,12 @@ fun StandaloneLocalHomeFeedScreen(
         add(LocalHomeTab.FILTERS)
     }
 
-    fun openSourceCatalogue() {
+    fun openSourceCatalogue(openFilterOnStart: Boolean = false) {
         val sourceId = StandaloneScope.sourceId
         if (isAnime) {
-            navigator.push(BrowseAnimeSourceScreen(sourceId, null))
+            navigator.push(BrowseAnimeSourceScreen(sourceId, null, openFilterOnStart))
         } else {
-            navigator.push(BrowseMangaSourceScreen(sourceId, null))
+            navigator.push(BrowseMangaSourceScreen(sourceId, null, openFilterOnStart))
         }
     }
 
@@ -177,7 +177,9 @@ fun StandaloneLocalHomeFeedScreen(
                                 selected = tab == selectedTab,
                                 onClick = {
                                     if (tab == LocalHomeTab.FILTERS) {
-                                        openSourceCatalogue()
+                                        // Open the single source's filter dialog here, not the
+                                        // catalogue with an extra "pulse Filter" step.
+                                        openSourceCatalogue(openFilterOnStart = true)
                                     } else {
                                         selectedTab = tab
                                     }

@@ -129,10 +129,12 @@ object HomeScreen : Screen() {
         val defaultTab = startScreen.tab
         // Existing installs do not have "home" in their saved set, so it used to be force-added.
         // In the host it is now controlled by the "New Home" switch in Appearance.
-        val effectiveEnabledTabs = if (StandaloneScope.isActive || newHomeEnabled) {
-            enabledTabs + NavTab.Home.prefKey
-        } else {
-            enabledTabs
+        val effectiveEnabledTabs = when {
+            StandaloneScope.isActive -> enabledTabs + NavTab.Home.prefKey
+            newHomeEnabled -> enabledTabs + NavTab.Home.prefKey
+            // "home" is part of NavTab.DEFAULT, so existing installs keep it in the saved set.
+            // Removing it here makes the Appearance switch actually hide the new Home in the host.
+            else -> enabledTabs - NavTab.Home.prefKey
         }
         val standaloneLibraryTab = when (StandaloneScope.kind) {
             StandaloneScope.KIND_MANGA -> MangaLibraryTab
@@ -140,10 +142,15 @@ object HomeScreen : Screen() {
             else -> AnimeLibraryTab
         }
         val shownTabs = if (StandaloneScope.isActive) {
-            // Home (Animetail-style feed), its source catalogue, library and settings.
+            // Only the home selected in Appearance is in the bottom bar: either the single source's
+            // catalogue or the Animetail-style feed (which still has its own search icon). Showing
+            // both at once was the v0.1.11 regression.
             buildList {
-                add(StandaloneFeedTab)
-                add(StandaloneCatalogueTab)
+                if (standaloneHomeMode == StandaloneHomeMode.FEED) {
+                    add(StandaloneCatalogueTab)
+                } else {
+                    add(StandaloneFeedTab)
+                }
                 add(standaloneLibraryTab)
                 add(MoreTab)
             }
