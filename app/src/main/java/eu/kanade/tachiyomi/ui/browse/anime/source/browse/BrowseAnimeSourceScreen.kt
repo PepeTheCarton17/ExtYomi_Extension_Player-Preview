@@ -89,6 +89,8 @@ import tachiyomi.source.local.entries.anime.LocalAnimeSource
 data class BrowseAnimeSourceScreen(
     val sourceId: Long,
     private val listingQuery: String?,
+    /** Standalone home's Filtros tab opens the filter dialog as soon as the source filters load. */
+    private val openFilterOnStart: Boolean = false,
 ) : Screen(), AssistContentScreen {
 
     private var assistUrl: String? = null
@@ -104,6 +106,14 @@ data class BrowseAnimeSourceScreen(
 
         val screenModel = rememberScreenModel { BrowseAnimeSourceScreenModel(sourceId, listingQuery) }
         val state by screenModel.state.collectAsState()
+
+        var filterOpenedOnStart by remember(screenModel) { mutableStateOf(false) }
+        LaunchedEffect(openFilterOnStart, state.filters) {
+            if (openFilterOnStart && !filterOpenedOnStart && state.filters.isNotEmpty()) {
+                screenModel.openFilterSheet()
+                filterOpenedOnStart = true
+            }
+        }
 
         val navigator = LocalNavigator.currentOrThrow
         val navigateUp: () -> Unit = {
