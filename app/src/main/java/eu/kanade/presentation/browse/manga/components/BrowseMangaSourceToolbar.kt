@@ -31,7 +31,9 @@ fun BrowseMangaSourceToolbar(
     searchQuery: String?,
     onSearchQueryChange: (String?) -> Unit,
     source: MangaSource?,
-    displayMode: LibraryDisplayMode,
+    // Nullable at the composable boundary: a novel source reaching this shared manga toolbar must
+    // never crash with a non-null-parameter NPE. Fall back to the normal catalogue default.
+    displayMode: LibraryDisplayMode?,
     onDisplayModeChange: (LibraryDisplayMode) -> Unit,
     navigateUp: (() -> Unit)?,
     navigationIconContent: (@Composable () -> Unit)? = null,
@@ -46,6 +48,7 @@ fun BrowseMangaSourceToolbar(
 ) {
     // Avoid capturing unstable source in actions lambda
     val title = source?.name
+    val effectiveDisplayMode = displayMode ?: LibraryDisplayMode.default
     val isLocalSource = source is LocalMangaSource || source is LocalNovelSource
     val isConfigurableSource = source is ConfigurableSource
 
@@ -66,7 +69,7 @@ fun BrowseMangaSourceToolbar(
                         add(
                             AppBar.Action(
                                 title = stringResource(MR.strings.action_display_mode),
-                                icon = if (displayMode == LibraryDisplayMode.List) {
+                                icon = if (effectiveDisplayMode == LibraryDisplayMode.List) {
                                     Icons.AutoMirrored.Filled.ViewList
                                 } else {
                                     Icons.Filled.ViewModule
@@ -127,21 +130,21 @@ fun BrowseMangaSourceToolbar(
             ) {
                 RadioMenuItem(
                     text = { Text(text = stringResource(MR.strings.action_display_comfortable_grid)) },
-                    isChecked = displayMode == LibraryDisplayMode.ComfortableGrid,
+                    isChecked = effectiveDisplayMode == LibraryDisplayMode.ComfortableGrid,
                 ) {
                     selectingDisplayMode = false
                     onDisplayModeChange(LibraryDisplayMode.ComfortableGrid)
                 }
                 RadioMenuItem(
                     text = { Text(text = stringResource(MR.strings.action_display_grid)) },
-                    isChecked = displayMode == LibraryDisplayMode.CompactGrid,
+                    isChecked = effectiveDisplayMode == LibraryDisplayMode.CompactGrid,
                 ) {
                     selectingDisplayMode = false
                     onDisplayModeChange(LibraryDisplayMode.CompactGrid)
                 }
                 RadioMenuItem(
                     text = { Text(text = stringResource(MR.strings.action_display_list)) },
-                    isChecked = displayMode == LibraryDisplayMode.List,
+                    isChecked = effectiveDisplayMode == LibraryDisplayMode.List,
                 ) {
                     selectingDisplayMode = false
                     onDisplayModeChange(LibraryDisplayMode.List)

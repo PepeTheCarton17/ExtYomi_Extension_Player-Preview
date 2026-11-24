@@ -74,16 +74,26 @@ class AndroidMangaSourceManager(
                             ),
                         ),
                     )
-                    extensions.forEach { extension ->
-                        extension.sources.forEach {
-                            mutableMap[it.id] = it
-                            registerStubSource(StubMangaSource.from(it))
-                        }
-                    }
-                    sourcesMapFlow.value = mutableMap
                     // Sources changed: drop cached novel/manga classifications so they re-evaluate
                     // against the new source map (avoids stale entries after install/update/uninstall).
                     NovelSourceCompat.clearCache()
+                    extensions.forEach { extension ->
+                        extension.sources.forEach { source ->
+                            val existing = mutableMap[source.id]
+                            // Some forks reuse a source id across a manga and a novel extension.
+                            // Keep the novel one so it stays in the novel sources tab after a restart.
+                            val keepNewSource = existing == null ||
+                                (
+                                    NovelSourceCompat.isNovelSource(source) &&
+                                        !NovelSourceCompat.isNovelSource(existing)
+                                    )
+                            if (keepNewSource) {
+                                mutableMap[source.id] = source
+                                registerStubSource(StubMangaSource.from(source))
+                            }
+                        }
+                    }
+                    sourcesMapFlow.value = mutableMap
                     _isInitialized.value = true
                     // Reconcile the persisted is_novel flag from the now-loaded novel sources. Additive
                     // (never demotes), idempotent and cheap, so it safely backfills existing entries on

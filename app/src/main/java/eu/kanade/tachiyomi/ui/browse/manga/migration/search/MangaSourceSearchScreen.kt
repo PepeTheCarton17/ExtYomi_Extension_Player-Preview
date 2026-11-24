@@ -60,7 +60,10 @@ data class MangaSourceSearchScreen(
         val navigator = LocalNavigator.currentOrThrow
         val scope = rememberCoroutineScope()
 
-        val screenModel = rememberScreenModel { BrowseMangaSourceScreenModel(sourceId, query) }
+        // Keep this migration search model separate from the regular source browser.
+        val screenModel = rememberScreenModel("manga-source-search-$sourceId-${oldManga.id}") {
+            BrowseMangaSourceScreenModel(sourceId, query)
+        }
         val state by screenModel.state.collectAsState()
 
         val snackbarHostState = remember { SnackbarHostState() }
