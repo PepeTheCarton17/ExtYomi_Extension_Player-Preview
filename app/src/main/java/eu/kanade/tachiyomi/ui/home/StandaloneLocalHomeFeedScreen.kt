@@ -47,8 +47,6 @@ import coil3.compose.AsyncImage
 import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.tachiyomi.animesource.AnimeCatalogueSource
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
-import eu.kanade.tachiyomi.domain.source.anime.service.AnimeSourceManager
-import eu.kanade.tachiyomi.domain.source.manga.service.MangaSourceManager
 import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.ui.browse.anime.source.browse.BrowseAnimeSourceScreen
@@ -57,6 +55,8 @@ import eu.kanade.tachiyomi.ui.browse.manga.source.browse.BrowseMangaSourceScreen
 import eu.kanade.tachiyomi.ui.browse.manga.source.browse.SourceFilterMangaDialog
 import eu.kanade.tachiyomi.ui.entries.anime.AnimeScreen
 import eu.kanade.tachiyomi.ui.entries.manga.MangaScreen
+import tachiyomi.domain.source.anime.service.AnimeSourceManager
+import tachiyomi.domain.source.manga.service.MangaSourceManager
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.PullRefresh
 import tachiyomi.presentation.core.i18n.stringResource

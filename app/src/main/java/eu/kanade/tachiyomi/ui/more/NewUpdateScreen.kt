@@ -41,10 +41,8 @@ class NewUpdateScreen(
         val workInfos by remember {
             AppUpdateDownloadJob.workInfos(context)
         }.collectAsState(initial = emptyList())
-        // Ignore a finished job left over from a previous version.
-        val workInfo = workInfos.firstOrNull {
-            it.inputData.getString(AppUpdateDownloadJob.EXTRA_DOWNLOAD_TITLE) == versionName
-        }
+        // enqueueUniqueWork(REPLACE) leaves a single job for this update, even across versions.
+        val workInfo = workInfos.firstOrNull()
         val downloadState = when (workInfo?.state) {
             WorkInfo.State.ENQUEUED,
             WorkInfo.State.BLOCKED,
