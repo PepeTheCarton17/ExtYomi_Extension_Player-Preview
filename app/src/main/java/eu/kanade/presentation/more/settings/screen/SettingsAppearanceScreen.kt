@@ -306,15 +306,14 @@ object SettingsAppearanceScreen : SearchableSettings {
         return Preference.PreferenceGroup(
             title = stringResource(AYMR.strings.pref_category_navigation),
             preferenceItems = buildList<Preference.PreferenceItem<out Any>> {
-                if (!StandaloneScope.isActive) {
-                    add(
-                        Preference.PreferenceItem.TextPreference(
-                            title = stringResource(AYMR.strings.pref_navigation_style),
-                            subtitle = stringResource(AYMR.strings.pref_navigation_style_summary),
-                            onClick = { navigator.push(NavBarOrderScreen()) },
-                        ),
-                    )
-                }
+                // Standalone apps get the same editor, limited to their own tabs in NavBarOrderScreen.
+                add(
+                    Preference.PreferenceItem.TextPreference(
+                        title = stringResource(AYMR.strings.pref_navigation_style),
+                        subtitle = stringResource(AYMR.strings.pref_navigation_style_summary),
+                        onClick = { navigator.push(NavBarOrderScreen()) },
+                    ),
+                )
                 add(
                     Preference.PreferenceItem.ListPreference(
                         preference = uiPreferences.bottomNavLabelMode(),

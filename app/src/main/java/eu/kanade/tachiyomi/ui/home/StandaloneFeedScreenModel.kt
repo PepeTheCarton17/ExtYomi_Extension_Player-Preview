@@ -65,6 +65,14 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
         isNovelScope
     private val sourceId = StandaloneScope.sourceId
 
+    // Query and filters selected in the standalone Home. A search can auto-select a source filter
+    // by name, so remember which one was automatic in order to clear it on the next query.
+    private var currentAnimeFilters: AnimeFilterList? = null
+    private var currentMangaFilters: FilterList? = null
+    private var autoSelectedAnimeCategory: String? = null
+    private var autoSelectedMangaCategory: String? = null
+    private var pendingSearchQuery = ""
+
     init {
         refresh()
     }
@@ -109,22 +117,102 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
 
     /** Applies the Home's filter sheet directly to the bundled extension and shows only its hits. */
     fun applyAnimeFilters(filters: AnimeFilterList) {
+        currentAnimeFilters = filters
+        autoSelectedAnimeCategory = null
         screenModelScope.launchIO {
             mutableState.update { it.copy(isRefreshing = true, filteredEntries = emptyList()) }
-            val items = searchAnimePage(filters)
+            val items = searchAnimePage(filters, pendingSearchQuery)
             mutableState.update { it.copy(isRefreshing = false, filteredEntries = items) }
         }
     }
 
     fun applyMangaFilters(filters: FilterList) {
+        currentMangaFilters = filters
+        autoSelectedMangaCategory = null
         screenModelScope.launchIO {
             mutableState.update { it.copy(isRefreshing = true, filteredEntries = emptyList()) }
-            val items = searchMangaPage(filters)
+            val items = searchMangaPage(filters, pendingSearchQuery)
             mutableState.update { it.copy(isRefreshing = false, filteredEntries = items) }
         }
     }
 
-    fun clearFilters() = mutableState.update { it.copy(filteredEntries = null) }
+    /**
+     * Searches inside the standalone Home instead of navigating to another catalogue. When the
+     * query names one of the source's filters (a genre, for example), that filter is selected and
+     * the search uses it, mirroring the catalogue's genre search; otherwise the text is passed to
+     * the source together with the filters already chosen in the Home's filter sheet.
+     */
+    fun search(query: String) {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) {
+            clearFilters()
+            return
+        }
+        pendingSearchQuery = trimmed
+        if (StandaloneScope.appliesTo(StandaloneScope.KIND_ANIME)) {
+            searchAnime(trimmed)
+        } else {
+            searchManga(trimmed)
+        }
+    }
+
+    private fun searchAnime(query: String) {
+        val source = animeSourceManager.get(sourceId) as? AnimeCatalogueSource ?: return
+        val filters = currentAnimeFilters ?: source.safeFilterList()
+        currentAnimeFilters = filters
+        autoSelectedAnimeCategory?.let { clearAnimeCategory(filters, it) }
+        autoSelectedAnimeCategory = null
+        val matched = applyAnimeCategory(filters, query)
+        if (matched) autoSelectedAnimeCategory = query
+        // The catalogue does the same for a genre: it searches with the filter, not as plain text.
+        val effectiveQuery = if (matched) "" else query
+        screenModelScope.launchIO {
+            mutableState.update {
+                it.copy(
+                    isRefreshing = true,
+                    filteredEntries = emptyList(),
+                    searchQuery = query,
+                    activeFilterName = if (matched) query else null,
+                )
+            }
+            val items = searchAnimePage(filters, effectiveQuery)
+            mutableState.update { it.copy(isRefreshing = false, filteredEntries = items) }
+        }
+    }
+
+    private fun searchManga(query: String) {
+        val source = mangaSourceManager.get(sourceId) as? CatalogueSource ?: return
+        val filters = currentMangaFilters ?: source.safeFilterList()
+        currentMangaFilters = filters
+        autoSelectedMangaCategory?.let { clearMangaCategory(filters, it) }
+        autoSelectedMangaCategory = null
+        val matched = applyMangaCategory(filters, query)
+        if (matched) autoSelectedMangaCategory = query
+        val effectiveQuery = if (matched) "" else query
+        screenModelScope.launchIO {
+            mutableState.update {
+                it.copy(
+                    isRefreshing = true,
+                    filteredEntries = emptyList(),
+                    searchQuery = query,
+                    activeFilterName = if (matched) query else null,
+                )
+            }
+            val items = searchMangaPage(filters, effectiveQuery)
+            mutableState.update { it.copy(isRefreshing = false, filteredEntries = items) }
+        }
+    }
+
+    fun clearFilters() {
+        currentAnimeFilters = null
+        currentMangaFilters = null
+        autoSelectedAnimeCategory = null
+        autoSelectedMangaCategory = null
+        pendingSearchQuery = ""
+        mutableState.update {
+            it.copy(filteredEntries = null, searchQuery = "", activeFilterName = null)
+        }
+    }
 
     fun toggleFeatured() = mutableState.update { it.copy(showFeatured = !it.showFeatured) }
 
@@ -351,11 +439,14 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
         }.getOrDefault(emptyList())
     }
 
-    private suspend fun searchAnimePage(filters: AnimeFilterList): List<FeedItem> = withIOContext {
+    private suspend fun searchAnimePage(
+        filters: AnimeFilterList,
+        query: String,
+    ): List<FeedItem> = withIOContext {
         val source = animeSourceManager.get(sourceId) as? AnimeCatalogueSource ?: return@withIOContext emptyList()
         runCatching {
             withTimeout(PAGE_TIMEOUT) {
-                source.getSearchAnime(1, "", filters).animes.mapNotNull { anime ->
+                source.getSearchAnime(1, query, filters).animes.mapNotNull { anime ->
                     runCatching {
                         val local = networkToLocalAnime.await(anime.toDomainAnime(sourceId))
                         anime.toSourceFeedItem(local.id)
@@ -365,11 +456,14 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
         }.getOrDefault(emptyList())
     }
 
-    private suspend fun searchMangaPage(filters: FilterList): List<FeedItem> = withIOContext {
+    private suspend fun searchMangaPage(
+        filters: FilterList,
+        query: String,
+    ): List<FeedItem> = withIOContext {
         val source = mangaSourceManager.get(sourceId) as? CatalogueSource ?: return@withIOContext emptyList()
         runCatching {
             withTimeout(PAGE_TIMEOUT) {
-                source.getSearchManga(1, "", filters).mangas.mapNotNull { manga ->
+                source.getSearchManga(1, query, filters).mangas.mapNotNull { manga ->
                     runCatching {
                         val local = networkToLocalManga.await(manga.toDomainManga(sourceId))
                         manga.toSourceFeedItem(local.id)
@@ -451,8 +545,12 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
         val popular: List<FeedItem> = emptyList(),
         /** All entries exposed by the bundled extension. */
         val allEntries: List<FeedItem> = emptyList(),
-        /** Non-null once the Home's filter sheet has been applied; null means no active filter. */
+        /** Non-null once the Home's search or filter sheet has been applied; null means no filter. */
         val filteredEntries: List<FeedItem>? = null,
+        /** Text currently searched in the standalone Home (for the active-result chip). */
+        val searchQuery: String = "",
+        /** Source filter auto-selected from the search text, when there was a name match. */
+        val activeFilterName: String? = null,
         val categorySections: List<FeedCategory> = emptyList(),
         val hasTrending: Boolean = false,
         val continueList: List<ContinueItem> = emptyList(),
@@ -661,6 +759,54 @@ private fun applyMangaCategory(filters: FilterList, name: String): Boolean {
         }
     }
     return false
+}
+
+/** Undoes the filter automatically selected for a previous search query. */
+private fun clearAnimeCategory(filters: AnimeFilterList, name: String) {
+    filters.forEach { filter ->
+        when (filter) {
+            is AnimeFilter.Group<*> -> filter.state.forEach { child ->
+                if (child is AnimeFilter<*> && child.name.equals(name, ignoreCase = true)) {
+                    when (child) {
+                        is AnimeFilter.TriState -> child.state = AnimeFilter.TriState.STATE_IGNORE
+                        is AnimeFilter.CheckBox -> child.state = false
+                        else -> Unit
+                    }
+                }
+            }
+            is AnimeFilter.TriState -> if (filter.name.equals(name, ignoreCase = true)) {
+                filter.state = AnimeFilter.TriState.STATE_IGNORE
+            }
+            is AnimeFilter.CheckBox -> if (filter.name.equals(name, ignoreCase = true)) {
+                filter.state = false
+            }
+            else -> Unit
+        }
+    }
+}
+
+/** Undoes the filter automatically selected for a previous search query. */
+private fun clearMangaCategory(filters: FilterList, name: String) {
+    filters.forEach { filter ->
+        when (filter) {
+            is Filter.Group<*> -> filter.state.forEach { child ->
+                if (child is Filter<*> && child.name.equals(name, ignoreCase = true)) {
+                    when (child) {
+                        is Filter.TriState -> child.state = Filter.TriState.STATE_IGNORE
+                        is Filter.CheckBox -> child.state = false
+                        else -> Unit
+                    }
+                }
+            }
+            is Filter.TriState -> if (filter.name.equals(name, ignoreCase = true)) {
+                filter.state = Filter.TriState.STATE_IGNORE
+            }
+            is Filter.CheckBox -> if (filter.name.equals(name, ignoreCase = true)) {
+                filter.state = false
+            }
+            else -> Unit
+        }
+    }
 }
 
 private fun applyAnimeTrending(filters: AnimeFilterList, name: String): Boolean {

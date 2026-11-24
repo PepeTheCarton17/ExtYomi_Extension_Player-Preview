@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
+import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.domain.ui.model.NavTab
 import eu.kanade.presentation.components.AppBar
@@ -57,6 +58,13 @@ class NavBarOrderScreen : Screen() {
         val orderPref = uiPreferences.bottomNavOrder()
         val enabled by enabledPref.collectAsState()
         val savedOrder by orderPref.collectAsState()
+        val standaloneKind = StandaloneScope.kind.takeIf { StandaloneScope.isActive }
+        val availableTabs = remember(standaloneKind, savedOrder) {
+            standaloneKind?.let(NavTab::allowedInStandalone) ?: NavTab.ordered(savedOrder)
+        }
+        // Foreign tabs saved by older builds are ignored; Home and Updates stay checked.
+        val effectiveEnabled = standaloneKind?.let { NavTab.enabledInStandalone(enabled, it) }
+            ?: enabled
 
         Scaffold(
             topBar = { scrollBehavior ->
@@ -69,8 +77,8 @@ class NavBarOrderScreen : Screen() {
         ) { paddingValues ->
             val lazyListState = rememberLazyListState()
             val listPadding = PaddingValues(MaterialTheme.padding.medium)
-            // Working copy of the tab order; the saved order seeds it once.
-            val localTabs = remember { NavTab.ordered(savedOrder).toMutableStateList() }
+            // Working copy of the tab order; only tabs valid for this app can be reordered.
+            val localTabs = remember(availableTabs) { availableTabs.toMutableStateList() }
             var dirty by remember { mutableStateOf(false) }
             val reorderableState = rememberReorderableLazyListState(lazyListState, listPadding) { from, to ->
                 localTabs.add(to.index, localTabs.removeAt(from.index))
@@ -110,7 +118,8 @@ class NavBarOrderScreen : Screen() {
                         items = localTabs,
                         key = { "tab-${it.prefKey}" },
                     ) { navTab ->
-                        val isEnabled = navTab.prefKey in enabled
+                        val isEnabled = navTab.prefKey in effectiveEnabled
+                        val isFixed = standaloneKind != null && NavTab.isFixedInStandalone(navTab)
                         ReorderableItem(reorderableState, key = "tab-${navTab.prefKey}") {
                             ElevatedCard(modifier = Modifier.animateItem()) {
                                 Row(
@@ -145,6 +154,7 @@ class NavBarOrderScreen : Screen() {
                                     )
                                     Checkbox(
                                         checked = isEnabled,
+                                        enabled = !isFixed,
                                         onCheckedChange = {
                                             val current = enabledPref.get()
                                             enabledPref.set(
