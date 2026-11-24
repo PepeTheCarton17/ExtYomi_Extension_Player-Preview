@@ -287,6 +287,8 @@
     <string name="standalone_generated">App generada: %1$s</string>
     <string name="standalone_generated_apps">Apps generadas</string>
     <string name="standalone_error">No se pudo generar la app</string>
+    <string name="standalone_updating">Actualizando %1$s…</string>
+    <string name="standalone_reinstall">Reinstalar</string>
     <string name="standalone_open">Abrir</string>
     <string name="standalone_pick_output_first">Elige primero una carpeta de salida</string>
     <string name="standalone_novel_not_supported">Las apps independientes de novelas aún no son compatibles</string>

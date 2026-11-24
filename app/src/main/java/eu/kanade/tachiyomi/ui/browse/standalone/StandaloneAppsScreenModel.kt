@@ -78,6 +78,7 @@ class StandaloneAppsScreenModel(
                 mutableState.update { current ->
                     newState.copy(
                         phaseByPackage = current.phaseByPackage,
+                        pendingInstall = current.pendingInstall,
                         isGeneratingAny = current.isGeneratingAny,
                         error = current.error,
                     )
@@ -103,6 +104,7 @@ class StandaloneAppsScreenModel(
 
     private fun State.copyTransientStateFrom(current: State) = copy(
         phaseByPackage = current.phaseByPackage,
+        pendingInstall = current.pendingInstall,
         isGeneratingAny = current.isGeneratingAny,
         error = current.error,
     )
@@ -114,12 +116,12 @@ class StandaloneAppsScreenModel(
             )
         }.getOrDefault(BuildConfig.VERSION_CODE.toLong())
 
-        // Sources, not extensions, decide the grouping. This reuses exactly the same enabled-source
-        // and pin settings as the Sources tabs, so "Pinned" and language headers behave identically.
-        val animeExtensionBySource = animeExtensions.installed
+        // Sources decide the grouping, but an extension with an update pending lives in `updates`,
+        // not `installed`. Ignoring that bucket hides perfectly usable extensions from "Create app".
+        val animeExtensionBySource = (animeExtensions.updates + animeExtensions.installed)
             .flatMap { extension -> extension.sources.map { it.id to extension } }
             .toMap()
-        val mangaExtensionBySource = mangaExtensions.installed
+        val mangaExtensionBySource = (mangaExtensions.updates + mangaExtensions.installed)
             .flatMap { extension -> extension.sources.map { it.id to extension } }
             .toMap()
 
@@ -198,7 +200,7 @@ class StandaloneAppsScreenModel(
             }
         }.toImmutableList()
 
-        val installedApps = registry.map { app ->
+        val installedApps = registry.filter { it.kind == kind }.map { app ->
             val info = runCatching {
                 context.packageManager.getPackageInfo(app.packageName, 0)
             }.getOrNull()
@@ -248,10 +250,18 @@ class StandaloneAppsScreenModel(
                         generatedVersionCode = generated.generatedVersionCode,
                         generatedVersionName = generated.generatedVersionName,
                     )
+                    // Rebuilding an app that is already installed must not offer "Instalar" in a
+                    // second section: go straight to the installer and back to "Instaladas".
+                    val alreadyInstalled = runCatching {
+                        context.packageManager.getPackageInfo(generated.packageName, 0)
+                    }.getOrNull() != null
                     upsert(app)
                     mutableState.update { current ->
                         current.copy(
-                            phaseByPackage = current.phaseByPackage + (key to AppPhase.Generated(app)),
+                            phaseByPackage = current.phaseByPackage + (
+                                key to if (alreadyInstalled) AppPhase.Updating else AppPhase.Generated(app)
+                                ),
+                            pendingInstall = if (alreadyInstalled) app else null,
                             isGeneratingAny = false,
                         )
                     }
@@ -269,26 +279,87 @@ class StandaloneAppsScreenModel(
         }
     }
 
-    /** Regenerates the APK with the current generator version, then prompts installation again. */
+    /**
+     * Regenerates the APK with the current generator version and queues it for immediate install.
+     * Used both by "Actualizar" and by "Reinstalar": neither leaves a pending "Instalar" step.
+     */
     fun update(context: Context, app: GeneratedStandaloneApp) {
-        generate(
-            context = context,
-            item = StandaloneExtensionItem(
-                name = app.label,
-                sourceName = app.sourceName,
-                sourceId = app.sourceId,
-                kind = app.kind,
-                extensionPkg = app.extensionPkg,
-                extensionVersionName = app.extensionVersionName,
-                icon = null,
-                lang = "",
-            ),
-            outputDirUri = Uri.parse(app.outputUri),
-        )
+        val key = app.stateKey
+        screenModelScope.launchIO {
+            mutableState.update { current ->
+                current.copy(
+                    phaseByPackage = current.phaseByPackage + (key to AppPhase.Updating),
+                    pendingInstall = null,
+                    error = false,
+                )
+            }
+            val result = runCatching {
+                StandaloneAppGenerator.generate(
+                    context = context,
+                    item = StandaloneExtensionItem(
+                        name = app.label,
+                        sourceName = app.sourceName,
+                        sourceId = app.sourceId,
+                        kind = app.kind,
+                        extensionPkg = app.extensionPkg,
+                        extensionVersionName = app.extensionVersionName,
+                        icon = null,
+                        lang = "",
+                    ),
+                    outputDirUri = Uri.parse(app.outputUri),
+                )
+            }
+            result.fold(
+                onSuccess = { generated ->
+                    val updatedApp = app.copy(
+                        packageName = generated.packageName,
+                        outputUri = generated.outputDirUri,
+                        apkUri = generated.apkUri,
+                        fileName = generated.fileName,
+                        generatedVersionCode = generated.generatedVersionCode,
+                        generatedVersionName = generated.generatedVersionName,
+                    )
+                    upsert(updatedApp, replacedPackage = app.packageName)
+                    mutableState.update { current ->
+                        current.copy(
+                            phaseByPackage = current.phaseByPackage + (key to AppPhase.Updating),
+                            pendingInstall = updatedApp,
+                            error = false,
+                        )
+                    }
+                },
+                onFailure = {
+                    mutableState.update { current ->
+                        current.copy(
+                            phaseByPackage = current.phaseByPackage - key,
+                            pendingInstall = null,
+                            error = true,
+                        )
+                    }
+                },
+            )
+        }
     }
 
-    private fun upsert(app: GeneratedStandaloneApp) {
-        val updated = registry.filterNot { it.packageName == app.packageName } + app
+    /** Queues an already generated APK for installation. The UI observes [State.pendingInstall]. */
+    fun requestInstall(app: GeneratedStandaloneApp) {
+        mutableState.update { current -> current.copy(pendingInstall = app) }
+    }
+
+    /** Aborts a queued install, e.g. when the install-permission request is shown instead. */
+    fun cancelPendingInstall() {
+        mutableState.update { current ->
+            current.copy(
+                pendingInstall = null,
+                phaseByPackage = current.phaseByPackage.filterValues { it !is AppPhase.Updating },
+            )
+        }
+    }
+
+    private fun upsert(app: GeneratedStandaloneApp, replacedPackage: String = app.packageName) {
+        val updated = registry.filterNot {
+            it.packageName == replacedPackage || it.packageName == app.packageName
+        } + app
         registry = updated
         uiPreferences.standaloneApps().set(updated)
         val refreshed = buildState(mutableState.value.kind)
@@ -332,6 +403,7 @@ class StandaloneAppsScreenModel(
         mutableState.update { current ->
             refreshed.copy(
                 phaseByPackage = current.phaseByPackage - app.stateKey,
+                pendingInstall = null,
                 isGeneratingAny = false,
                 error = current.error,
             )
@@ -354,8 +426,10 @@ class StandaloneAppsScreenModel(
         val items: ImmutableList<StandaloneSourceUiModel> = persistentListOf(),
         val installedApps: List<StandaloneInstallState> = emptyList(),
         val updateCount: Int = 0,
-        /** Transient per-app phase; the same app keeps one row and one action throughout. */
+        /** Transient per-app phase; it only swaps the row's action, never its section. */
         val phaseByPackage: Map<String, AppPhase> = emptyMap(),
+        /** APK waiting for the installer. Observed by the UI to launch the install prompt. */
+        val pendingInstall: GeneratedStandaloneApp? = null,
         val isGeneratingAny: Boolean = false,
         val error: Boolean = false,
     )
@@ -363,6 +437,7 @@ class StandaloneAppsScreenModel(
     sealed interface AppPhase {
         data object Generating : AppPhase
         data class Generated(val app: GeneratedStandaloneApp) : AppPhase
+        data object Updating : AppPhase
         data object Installing : AppPhase
     }
 
