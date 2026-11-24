@@ -49,8 +49,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="preview-v0.1.13"
-          TITLE="ExtYomi Preview v0.1.13"
+          TAG="preview-v0.1.14"
+          TITLE="ExtYomi Preview v0.1.14"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" app/build/outputs/apk/preview/*.apk app/build/outputs/apk/preview/checksums.txt --clobber
           else
