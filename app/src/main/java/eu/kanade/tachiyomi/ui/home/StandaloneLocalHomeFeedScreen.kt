@@ -26,6 +26,7 @@ import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -34,6 +35,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
@@ -43,14 +45,24 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import coil3.compose.AsyncImage
 import eu.kanade.domain.ui.StandaloneScope
+import eu.kanade.tachiyomi.animesource.AnimeCatalogueSource
+import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
+import eu.kanade.tachiyomi.domain.source.anime.service.AnimeSourceManager
+import eu.kanade.tachiyomi.domain.source.manga.service.MangaSourceManager
+import eu.kanade.tachiyomi.source.CatalogueSource
+import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.ui.browse.anime.source.browse.BrowseAnimeSourceScreen
+import eu.kanade.tachiyomi.ui.browse.anime.source.browse.SourceFilterAnimeDialog
 import eu.kanade.tachiyomi.ui.browse.manga.source.browse.BrowseMangaSourceScreen
+import eu.kanade.tachiyomi.ui.browse.manga.source.browse.SourceFilterMangaDialog
 import eu.kanade.tachiyomi.ui.entries.anime.AnimeScreen
 import eu.kanade.tachiyomi.ui.entries.manga.MangaScreen
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.PullRefresh
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.screens.LoadingScreen
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
 
 private enum class LocalHomeTab { ALL, POPULAR, TRENDING, FILTERS }
 
@@ -74,6 +86,9 @@ fun StandaloneLocalHomeFeedScreen(
     val navigator = LocalNavigator.currentOrThrow
     val isAnime = StandaloneScope.appliesTo(StandaloneScope.KIND_ANIME)
     var selectedTab by remember { mutableStateOf(LocalHomeTab.ALL) }
+    var showFilterSheet by remember { mutableStateOf(false) }
+    var animeFilters by remember { mutableStateOf<AnimeFilterList?>(null) }
+    var mangaFilters by remember { mutableStateOf<FilterList?>(null) }
 
     val tabs = buildList {
         add(LocalHomeTab.ALL)
@@ -82,13 +97,33 @@ fun StandaloneLocalHomeFeedScreen(
         add(LocalHomeTab.FILTERS)
     }
 
-    fun openSourceCatalogue(openFilterOnStart: Boolean = false) {
+    fun freshAnimeFilters(): AnimeFilterList {
+        val source = Injekt.get<AnimeSourceManager>().get(StandaloneScope.sourceId) as? AnimeCatalogueSource
+        return source?.let { runCatching { it.getFilterList() }.getOrNull() } ?: AnimeFilterList()
+    }
+
+    fun freshMangaFilters(): FilterList {
+        val source = Injekt.get<MangaSourceManager>().get(StandaloneScope.sourceId) as? CatalogueSource
+        return source?.let { runCatching { it.getFilterList() }.getOrNull() } ?: FilterList()
+    }
+
+    // Search still goes to the single-source catalogue. Filters stay here, in the Home.
+    fun openSourceCatalogue() {
         val sourceId = StandaloneScope.sourceId
         if (isAnime) {
-            navigator.push(BrowseAnimeSourceScreen(sourceId, null, openFilterOnStart))
+            navigator.push(BrowseAnimeSourceScreen(sourceId, null))
         } else {
-            navigator.push(BrowseMangaSourceScreen(sourceId, null, openFilterOnStart))
+            navigator.push(BrowseMangaSourceScreen(sourceId, null))
         }
+    }
+
+    fun openFilters() {
+        if (isAnime) {
+            animeFilters = freshAnimeFilters()
+        } else {
+            mangaFilters = freshMangaFilters()
+        }
+        showFilterSheet = true
     }
 
     fun onFeedItemClick(item: StandaloneFeedScreenModel.FeedItem) {
@@ -138,6 +173,8 @@ fun StandaloneLocalHomeFeedScreen(
                 return@PullRefresh
             }
 
+            val filteredEntries = state.filteredEntries
+
             // Todos shows every entry of the extension: categories, popular and trending are
             // interleaved as divided sections instead of the old anime/manga/movie chips.
             val sections = buildList<LocalFeedSection> {
@@ -150,10 +187,14 @@ fun StandaloneLocalHomeFeedScreen(
             }
 
             val nothingToShow = when (selectedTab) {
-                LocalHomeTab.ALL -> state.allEntries.isEmpty() &&
-                    state.popular.isEmpty() &&
-                    state.recommended.isEmpty() &&
-                    state.continueList.isEmpty()
+                LocalHomeTab.ALL -> if (filteredEntries != null) {
+                    filteredEntries.isEmpty()
+                } else {
+                    state.allEntries.isEmpty() &&
+                        state.popular.isEmpty() &&
+                        state.recommended.isEmpty() &&
+                        state.continueList.isEmpty()
+                }
                 LocalHomeTab.POPULAR -> state.popular.isEmpty()
                 LocalHomeTab.TRENDING -> state.trending.isEmpty()
                 LocalHomeTab.FILTERS -> false
@@ -177,9 +218,8 @@ fun StandaloneLocalHomeFeedScreen(
                                 selected = tab == selectedTab,
                                 onClick = {
                                     if (tab == LocalHomeTab.FILTERS) {
-                                        // Open the single source's filter dialog here, not the
-                                        // catalogue with an extra "pulse Filter" step.
-                                        openSourceCatalogue(openFilterOnStart = true)
+                                        // Open the filter sheet in this Home, without navigating.
+                                        openFilters()
                                     } else {
                                         selectedTab = tab
                                     }
@@ -192,42 +232,67 @@ fun StandaloneLocalHomeFeedScreen(
 
                 when (selectedTab) {
                     LocalHomeTab.ALL -> {
-                        if (state.showContinue && state.continueList.isNotEmpty()) {
+                        if (filteredEntries != null) {
                             item {
-                                LocalSectionTitle(stringResource(MR.strings.standalone_feed_continue))
-                                LazyRow(
-                                    contentPadding = PaddingValues(horizontal = 16.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    items(items = state.continueList, key = { "continue-${it.id}" }) { entry ->
-                                        ContinueCardLocal(entry) {
-                                            if (entry.isAnime) {
-                                                navigator.push(AnimeScreen(entry.id, true))
-                                            } else {
-                                                navigator.push(MangaScreen(entry.id, true))
+                                    Text(
+                                        text = stringResource(MR.strings.action_filter),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    TextButton(onClick = screenModel::clearFilters) {
+                                        Text(stringResource(MR.strings.action_filter_empty))
+                                    }
+                                }
+                                LocalFeedRow(
+                                    title = stringResource(MR.strings.action_filter),
+                                    items = filteredEntries,
+                                    onClick = ::onFeedItemClick,
+                                )
+                            }
+                        } else {
+                            if (state.showContinue && state.continueList.isNotEmpty()) {
+                                item {
+                                    LocalSectionTitle(stringResource(MR.strings.standalone_feed_continue))
+                                    LazyRow(
+                                        contentPadding = PaddingValues(horizontal = 16.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    ) {
+                                        items(items = state.continueList, key = { "continue-${it.id}" }) { entry ->
+                                            ContinueCardLocal(entry) {
+                                                if (entry.isAnime) {
+                                                    navigator.push(AnimeScreen(entry.id, true))
+                                                } else {
+                                                    navigator.push(MangaScreen(entry.id, true))
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
-                        }
-                        if (state.showRecommended && state.recommended.isNotEmpty()) {
-                            item {
-                                LocalFeedRow(
-                                    title = stringResource(MR.strings.standalone_feed_recommended),
-                                    items = state.recommended,
-                                    onClick = ::onFeedItemClick,
-                                )
+                            if (state.showRecommended && state.recommended.isNotEmpty()) {
+                                item {
+                                    LocalFeedRow(
+                                        title = stringResource(MR.strings.standalone_feed_recommended),
+                                        items = state.recommended,
+                                        onClick = ::onFeedItemClick,
+                                    )
+                                }
                             }
-                        }
-                        sections.forEach { section ->
-                            item(key = "local-section-${section.title}") {
-                                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-                                LocalFeedRow(
-                                    title = section.title,
-                                    items = section.items,
-                                    onClick = ::onFeedItemClick,
-                                )
+                            sections.forEach { section ->
+                                item(key = "local-section-${section.title}") {
+                                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                                    LocalFeedRow(
+                                        title = section.title,
+                                        items = section.items,
+                                        onClick = ::onFeedItemClick,
+                                    )
+                                }
                             }
                         }
                     }
@@ -261,6 +326,38 @@ fun StandaloneLocalHomeFeedScreen(
                         )
                     }
                 }
+            }
+        }
+    }
+
+    if (showFilterSheet) {
+        if (isAnime) {
+            animeFilters?.let { filters ->
+                SourceFilterAnimeDialog(
+                    onDismissRequest = { showFilterSheet = false },
+                    filters = filters,
+                    onReset = { animeFilters = freshAnimeFilters() },
+                    onFilter = {
+                        screenModel.applyAnimeFilters(filters)
+                        selectedTab = LocalHomeTab.ALL
+                        showFilterSheet = false
+                    },
+                    onUpdate = { animeFilters = it },
+                )
+            }
+        } else {
+            mangaFilters?.let { filters ->
+                SourceFilterMangaDialog(
+                    onDismissRequest = { showFilterSheet = false },
+                    filters = filters,
+                    onReset = { mangaFilters = freshMangaFilters() },
+                    onFilter = {
+                        screenModel.applyMangaFilters(filters)
+                        selectedTab = LocalHomeTab.ALL
+                        showFilterSheet = false
+                    },
+                    onUpdate = { mangaFilters = it },
+                )
             }
         }
     }

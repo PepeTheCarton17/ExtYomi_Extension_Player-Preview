@@ -71,7 +71,7 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
 
     fun refresh() {
         screenModelScope.launchIO {
-            mutableState.update { it.copy(isRefreshing = true) }
+            mutableState.update { it.copy(isRefreshing = true, filteredEntries = null) }
 
             val continueList = loadContinue()
 
@@ -106,6 +106,25 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
             }
         }
     }
+
+    /** Applies the Home's filter sheet directly to the bundled extension and shows only its hits. */
+    fun applyAnimeFilters(filters: AnimeFilterList) {
+        screenModelScope.launchIO {
+            mutableState.update { it.copy(isRefreshing = true, filteredEntries = emptyList()) }
+            val items = searchAnimePage(filters)
+            mutableState.update { it.copy(isRefreshing = false, filteredEntries = items) }
+        }
+    }
+
+    fun applyMangaFilters(filters: FilterList) {
+        screenModelScope.launchIO {
+            mutableState.update { it.copy(isRefreshing = true, filteredEntries = emptyList()) }
+            val items = searchMangaPage(filters)
+            mutableState.update { it.copy(isRefreshing = false, filteredEntries = items) }
+        }
+    }
+
+    fun clearFilters() = mutableState.update { it.copy(filteredEntries = null) }
 
     fun toggleFeatured() = mutableState.update { it.copy(showFeatured = !it.showFeatured) }
 
@@ -332,6 +351,34 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
         }.getOrDefault(emptyList())
     }
 
+    private suspend fun searchAnimePage(filters: AnimeFilterList): List<FeedItem> = withIOContext {
+        val source = animeSourceManager.get(sourceId) as? AnimeCatalogueSource ?: return@withIOContext emptyList()
+        runCatching {
+            withTimeout(PAGE_TIMEOUT) {
+                source.getSearchAnime(1, "", filters).animes.mapNotNull { anime ->
+                    runCatching {
+                        val local = networkToLocalAnime.await(anime.toDomainAnime(sourceId))
+                        anime.toSourceFeedItem(local.id)
+                    }.getOrNull()
+                }
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    private suspend fun searchMangaPage(filters: FilterList): List<FeedItem> = withIOContext {
+        val source = mangaSourceManager.get(sourceId) as? CatalogueSource ?: return@withIOContext emptyList()
+        runCatching {
+            withTimeout(PAGE_TIMEOUT) {
+                source.getSearchManga(1, "", filters).mangas.mapNotNull { manga ->
+                    runCatching {
+                        val local = networkToLocalManga.await(manga.toDomainManga(sourceId))
+                        manga.toSourceFeedItem(local.id)
+                    }.getOrNull()
+                }
+            }
+        }.getOrDefault(emptyList())
+    }
+
     /**
      * Converts AniList suggestions into cards backed by real extension entries. Nothing is shown
      * when the title does not match exactly after normalisation (case and signs ignored).
@@ -404,6 +451,8 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
         val popular: List<FeedItem> = emptyList(),
         /** All entries exposed by the bundled extension. */
         val allEntries: List<FeedItem> = emptyList(),
+        /** Non-null once the Home's filter sheet has been applied; null means no active filter. */
+        val filteredEntries: List<FeedItem>? = null,
         val categorySections: List<FeedCategory> = emptyList(),
         val hasTrending: Boolean = false,
         val continueList: List<ContinueItem> = emptyList(),

@@ -9,6 +9,7 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.ForegroundInfo
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import eu.kanade.tachiyomi.data.notification.Notifications
@@ -19,6 +20,7 @@ import eu.kanade.tachiyomi.network.await
 import eu.kanade.tachiyomi.network.newCachelessCallWithProgress
 import eu.kanade.tachiyomi.util.storage.getUriCompat
 import eu.kanade.tachiyomi.util.storage.saveTo
+import eu.kanade.tachiyomi.util.system.setForegroundSafely
 import eu.kanade.tachiyomi.util.system.workManager
 import logcat.LogPriority
 import okhttp3.internal.http2.ErrorCode
@@ -30,6 +32,7 @@ import tachiyomi.i18n.MR
 import uy.kohesive.injekt.injectLazy
 import java.io.File
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.flow.Flow
 
 class AppUpdateDownloadJob(private val context: Context, workerParams: WorkerParameters) :
     CoroutineWorker(context, workerParams) {
@@ -46,16 +49,18 @@ class AppUpdateDownloadJob(private val context: Context, workerParams: WorkerPar
         }
 
         try {
-            setForeground(getForegroundInfo())
-        } catch (e: IllegalStateException) {
+            setForegroundSafely()
+        } catch (e: SecurityException) {
             logcat(LogPriority.ERROR, e) { "Not allowed to run on foreground service" }
         }
 
-        withIOContext {
+        // Propagate failures so the in-app update screen can show "Retry" instead of pretending
+        // the download finished when the network call or the file write failed.
+        val downloaded = withIOContext {
             downloadApk(title, url)
         }
 
-        return Result.success()
+        return if (downloaded) Result.success() else Result.failure()
     }
 
     override suspend fun getForegroundInfo(): ForegroundInfo {
@@ -75,7 +80,7 @@ class AppUpdateDownloadJob(private val context: Context, workerParams: WorkerPar
      *
      * @param url url location of file
      */
-    private suspend fun downloadApk(title: String, url: String) {
+    private suspend fun downloadApk(title: String, url: String): Boolean {
         // Show notification download starting.
         notifier.onDownloadStarted(title)
 
@@ -93,26 +98,25 @@ class AppUpdateDownloadJob(private val context: Context, workerParams: WorkerPar
                     savedProgress = progress
                     lastTick = currentTime
                     notifier.onProgressChange(progress)
+                    setProgressAsync(workDataOf(EXTRA_PROGRESS to progress))
                 }
             }
         }
 
-        try {
+        return try {
             // Download the new update.
             val response = network.client.newCachelessCallWithProgress(GET(url), progressListener)
                 .await()
 
-            // File where the apk will be saved.
-            val apkFile = File(context.externalCacheDir, "update.apk")
-
             if (response.isSuccessful) {
-                response.body.source().saveTo(apkFile)
+                response.body.source().saveTo(downloadedApk(context))
             } else {
                 response.close()
                 throw Exception("Unsuccessful response")
             }
             notifier.cancel()
-            notifier.promptInstall(apkFile.getUriCompat(context))
+            notifier.promptInstall(downloadedApk(context).getUriCompat(context))
+            true
         } catch (e: Exception) {
             val shouldCancel = e is CancellationException ||
                 (e is StreamResetException && e.errorCode == ErrorCode.CANCEL)
@@ -121,6 +125,7 @@ class AppUpdateDownloadJob(private val context: Context, workerParams: WorkerPar
             } else {
                 notifier.onDownloadError(url)
             }
+            false
         }
     }
 
@@ -129,6 +134,14 @@ class AppUpdateDownloadJob(private val context: Context, workerParams: WorkerPar
 
         const val EXTRA_DOWNLOAD_URL = "DOWNLOAD_URL"
         const val EXTRA_DOWNLOAD_TITLE = "DOWNLOAD_TITLE"
+        const val EXTRA_PROGRESS = "PROGRESS"
+        const val APK_FILE_NAME = "update.apk"
+
+        fun downloadedApk(context: Context): File = File(context.externalCacheDir, APK_FILE_NAME)
+
+        /** In-app screen observes this so progress is visible even with notifications disabled. */
+        fun workInfos(context: Context): Flow<List<WorkInfo>> =
+            context.workManager.getWorkInfosForUniqueWorkFlow(TAG)
 
         fun start(context: Context, url: String, title: String? = null) {
             val constraints = Constraints(
