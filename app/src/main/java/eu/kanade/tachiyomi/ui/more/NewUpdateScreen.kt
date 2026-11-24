@@ -77,7 +77,8 @@ class NewUpdateScreen(
                         ).send()
                     }
                     AppUpdateDownloadState.Idle,
-                    AppUpdateDownloadState.Error -> AppUpdateDownloadJob.start(
+                    AppUpdateDownloadState.Error,
+                    -> AppUpdateDownloadJob.start(
                         context = context,
                         url = downloadLink,
                         title = versionName,
