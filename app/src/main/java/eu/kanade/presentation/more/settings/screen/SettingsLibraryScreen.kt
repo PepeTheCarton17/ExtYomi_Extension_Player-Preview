@@ -16,15 +16,16 @@ import androidx.core.content.ContextCompat
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.navigator.currentOrThrow
+import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.presentation.category.visualName
 import eu.kanade.presentation.more.settings.Preference
-import eu.kanade.presentation.more.settings.PreferenceItem
 import eu.kanade.presentation.more.settings.widget.TriStateListDialog
 import eu.kanade.tachiyomi.data.library.anime.AnimeLibraryUpdateJob
 import eu.kanade.tachiyomi.data.library.manga.MangaLibraryUpdateJob
 import eu.kanade.tachiyomi.ui.category.CategoriesTab
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.persistentMapOf
+import kotlinx.collections.immutable.toImmutableList
 import kotlinx.collections.immutable.toImmutableMap
 import kotlinx.coroutines.launch
 import tachiyomi.domain.category.anime.interactor.GetAnimeCategories
@@ -70,18 +71,42 @@ object SettingsLibraryScreen : SearchableSettings {
         val allNovelCategories by getNovelCategories.subscribe().collectAsState(initial = emptyList())
         val libraryPreferences = remember { Injekt.get<LibraryPreferences>() }
 
-        return listOf(
-            getCategoriesGroup(
-                LocalNavigator.currentOrThrow,
-                allCategories,
-                allAnimeCategories,
-                libraryPreferences,
-            ),
-            getGlobalUpdateGroup(allCategories, allAnimeCategories, allNovelCategories, libraryPreferences),
-            getSeasonBehaviorGroup(libraryPreferences),
-            getAnimeBehaviorGroup(libraryPreferences),
-            getBehaviorGroup(libraryPreferences),
-        )
+        // ExtYomi shows all three kinds; a generated standalone only its own kind.
+        val isStandalone = StandaloneScope.isActive
+        val showAnime = !isStandalone || StandaloneScope.appliesTo(StandaloneScope.KIND_ANIME)
+        val showManga = !isStandalone || StandaloneScope.appliesTo(StandaloneScope.KIND_MANGA)
+        val showNovel = !isStandalone || StandaloneScope.appliesTo(StandaloneScope.KIND_NOVEL)
+
+        return buildList {
+            add(
+                getCategoriesGroup(
+                    LocalNavigator.currentOrThrow,
+                    allCategories,
+                    allAnimeCategories,
+                    libraryPreferences,
+                    showAnime,
+                    showManga,
+                ),
+            )
+            add(
+                getGlobalUpdateGroup(
+                    allCategories,
+                    allAnimeCategories,
+                    allNovelCategories,
+                    libraryPreferences,
+                    showAnime,
+                    showManga,
+                    showNovel,
+                ),
+            )
+            if (showAnime) {
+                add(getSeasonBehaviorGroup(libraryPreferences))
+                add(getAnimeBehaviorGroup(libraryPreferences))
+            }
+            if (showManga || showNovel) {
+                add(getBehaviorGroup(libraryPreferences))
+            }
+        }
     }
 
     @Composable
@@ -90,6 +115,8 @@ object SettingsLibraryScreen : SearchableSettings {
         allCategories: List<Category>,
         allAnimeCategories: List<Category>,
         libraryPreferences: LibraryPreferences,
+        showAnime: Boolean,
+        showManga: Boolean,
     ): Preference.PreferenceGroup {
         val scope = rememberCoroutineScope()
         val userCategoriesCount = allCategories.filterNot(Category::isSystemCategory).size
@@ -106,9 +133,8 @@ object SettingsLibraryScreen : SearchableSettings {
         val animeLabels = listOf(stringResource(MR.strings.default_category_summary)) +
             allAnimeCategories.fastMap { it.visualName }
 
-        return Preference.PreferenceGroup(
-            title = stringResource(AYMR.strings.general_categories),
-            preferenceItems = persistentListOf(
+        val animeCategoryItems: List<Preference.PreferenceItem<out Any>?> = if (showAnime) {
+            listOf(
                 Preference.PreferenceItem.TextPreference(
                     title = stringResource(AYMR.strings.action_edit_anime_categories),
                     subtitle = pluralStringResource(
@@ -123,6 +149,12 @@ object SettingsLibraryScreen : SearchableSettings {
                     entries = animeIds.zip(animeLabels).toMap().toImmutableMap(),
                     title = stringResource(AYMR.strings.default_anime_category),
                 ),
+            )
+        } else {
+            emptyList()
+        }
+        val mangaCategoryItems: List<Preference.PreferenceItem<out Any>?> = if (showManga) {
+            listOf(
                 Preference.PreferenceItem.TextPreference(
                     title = stringResource(AYMR.strings.action_edit_manga_categories),
                     subtitle = pluralStringResource(
@@ -140,23 +172,37 @@ object SettingsLibraryScreen : SearchableSettings {
                     entries = mangaIds.zip(mangaLabels).toMap().toImmutableMap(),
                     title = stringResource(AYMR.strings.default_manga_category),
                 ),
-                Preference.PreferenceItem.SwitchPreference(
-                    preference = libraryPreferences.categorizedDisplaySettings(),
-                    title = stringResource(MR.strings.categorized_display_settings),
-                    onValueChanged = {
-                        if (!it) {
-                            scope.launch {
-                                Injekt.get<ResetMangaCategoryFlags>().await()
+            )
+        } else {
+            emptyList()
+        }
+
+        return Preference.PreferenceGroup(
+            title = stringResource(AYMR.strings.general_categories),
+            preferenceItems = buildList<Preference.PreferenceItem<out Any>?> {
+                addAll(animeCategoryItems)
+                addAll(mangaCategoryItems)
+                add(
+                    Preference.PreferenceItem.SwitchPreference(
+                        preference = libraryPreferences.categorizedDisplaySettings(),
+                        title = stringResource(MR.strings.categorized_display_settings),
+                        onValueChanged = {
+                            if (!it) {
+                                scope.launch {
+                                    Injekt.get<ResetMangaCategoryFlags>().await()
+                                }
                             }
-                        }
-                        true
-                    },
-                ),
-                Preference.PreferenceItem.SwitchPreference(
-                    preference = libraryPreferences.hideHiddenCategoriesSettings(),
-                    title = stringResource(AYMR.strings.pref_category_hide_hidden),
-                ),
-            ),
+                            true
+                        },
+                    ),
+                )
+                add(
+                    Preference.PreferenceItem.SwitchPreference(
+                        preference = libraryPreferences.hideHiddenCategoriesSettings(),
+                        title = stringResource(AYMR.strings.pref_category_hide_hidden),
+                    ),
+                )
+            }.filterNotNull().toImmutableList(),
         )
     }
 
@@ -166,6 +212,9 @@ object SettingsLibraryScreen : SearchableSettings {
         allAnimeCategories: List<Category>,
         allNovelCategories: List<Category>,
         libraryPreferences: LibraryPreferences,
+        showAnime: Boolean,
+        showManga: Boolean,
+        showNovel: Boolean,
     ): Preference.PreferenceGroup {
         val context = LocalContext.current
 
@@ -259,9 +308,49 @@ object SettingsLibraryScreen : SearchableSettings {
             )
         }
 
+        val animeCategoriesPreference: Preference.PreferenceItem<out Any>? = if (showAnime) {
+            Preference.PreferenceItem.TextPreference(
+                title = stringResource(AYMR.strings.anime_categories),
+                subtitle = getCategoriesLabel(
+                    allCategories = allAnimeCategories,
+                    included = includedAnime,
+                    excluded = excludedAnime,
+                ),
+                onClick = { showAnimeCategoriesDialog = true },
+            )
+        } else {
+            null
+        }
+        val mangaCategoriesPreference: Preference.PreferenceItem<out Any>? = if (showManga) {
+            Preference.PreferenceItem.TextPreference(
+                title = stringResource(AYMR.strings.manga_categories),
+                subtitle = getCategoriesLabel(
+                    allCategories = allMangaCategories,
+                    included = includedManga,
+                    excluded = excludedManga,
+                ),
+                onClick = { showMangaCategoriesDialog = true },
+            )
+        } else {
+            null
+        }
+        val novelCategoriesPreference: Preference.PreferenceItem<out Any>? = if (showNovel) {
+            Preference.PreferenceItem.TextPreference(
+                title = stringResource(AYMR.strings.novel_categories),
+                subtitle = getCategoriesLabel(
+                    allCategories = allNovelCategories,
+                    included = includedNovel,
+                    excluded = excludedNovel,
+                ),
+                onClick = { showNovelCategoriesDialog = true },
+            )
+        } else {
+            null
+        }
+
         return Preference.PreferenceGroup(
             title = stringResource(MR.strings.pref_category_library_update),
-            preferenceItems = persistentListOf(
+            preferenceItems = persistentListOf<Preference.PreferenceItem<out Any>?>(
                 Preference.PreferenceItem.ListPreference(
                     preference = autoUpdateIntervalPref,
                     entries = persistentMapOf(
@@ -319,33 +408,9 @@ object SettingsLibraryScreen : SearchableSettings {
                         true
                     },
                 ),
-                Preference.PreferenceItem.TextPreference(
-                    title = stringResource(AYMR.strings.anime_categories),
-                    subtitle = getCategoriesLabel(
-                        allCategories = allAnimeCategories,
-                        included = includedAnime,
-                        excluded = excludedAnime,
-                    ),
-                    onClick = { showAnimeCategoriesDialog = true },
-                ),
-                Preference.PreferenceItem.TextPreference(
-                    title = stringResource(AYMR.strings.manga_categories),
-                    subtitle = getCategoriesLabel(
-                        allCategories = allMangaCategories,
-                        included = includedManga,
-                        excluded = excludedManga,
-                    ),
-                    onClick = { showMangaCategoriesDialog = true },
-                ),
-                Preference.PreferenceItem.TextPreference(
-                    title = stringResource(AYMR.strings.novel_categories),
-                    subtitle = getCategoriesLabel(
-                        allCategories = allNovelCategories,
-                        included = includedNovel,
-                        excluded = excludedNovel,
-                    ),
-                    onClick = { showNovelCategoriesDialog = true },
-                ),
+                animeCategoriesPreference,
+                mangaCategoriesPreference,
+                novelCategoriesPreference,
                 Preference.PreferenceItem.SwitchPreference(
                     preference = libraryPreferences.autoUpdateMetadata(),
                     title = stringResource(MR.strings.pref_library_update_refresh_metadata),
@@ -365,7 +430,7 @@ object SettingsLibraryScreen : SearchableSettings {
                     preference = libraryPreferences.newShowUpdatesCount(),
                     title = stringResource(AYMR.strings.pref_library_update_show_tab_badge),
                 ),
-            ),
+            ).filterNotNull().toImmutableList(),
         )
     }
 

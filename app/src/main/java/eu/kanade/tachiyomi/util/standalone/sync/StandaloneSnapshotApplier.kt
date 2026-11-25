@@ -90,6 +90,7 @@ class StandaloneSnapshotApplier(
                             seen = chapter.seen,
                             bookmark = chapter.bookmark,
                             lastSecondSeen = chapter.position,
+                            dateUpload = chapter.dateUpload,
                         )
                     },
                 )
@@ -107,12 +108,15 @@ class StandaloneSnapshotApplier(
                         seen = incoming.seen,
                         bookmark = incoming.bookmark,
                         lastSecondSeen = incoming.position,
+                        // null keeps a known date when an old snapshot has none, so it cannot
+                        // turn a real "15 hours ago" back into "N/D".
+                        dateUpload = incoming.dateUpload.takeIf { it > 0L },
                     )
                 },
             )
 
             // History is additive: a snapshot that carries no timestamp must not wipe what this
-            // app already knows. Resetting it here is what turned hours into "N/D" after syncing.
+            // app already knows, so never reset it here.
             nowExisting.forEach { episode ->
                 val key = episode.url.ifBlank { episode.name }
                 val readAt = entry.chapters.firstOrNull { it.itemKey == key }?.readAt ?: 0L
@@ -179,6 +183,7 @@ class StandaloneSnapshotApplier(
                             read = chapter.seen,
                             bookmark = chapter.bookmark,
                             lastPageRead = chapter.position,
+                            dateUpload = chapter.dateUpload,
                         )
                     },
                 )
@@ -196,6 +201,7 @@ class StandaloneSnapshotApplier(
                         read = incoming.seen,
                         bookmark = incoming.bookmark,
                         lastPageRead = incoming.position,
+                        dateUpload = incoming.dateUpload.takeIf { it > 0L },
                     )
                 },
             )

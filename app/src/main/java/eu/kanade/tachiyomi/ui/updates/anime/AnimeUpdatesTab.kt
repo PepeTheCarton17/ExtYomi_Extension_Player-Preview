@@ -22,13 +22,13 @@ import eu.kanade.presentation.components.TabContent
 import eu.kanade.presentation.entries.anime.EpisodeOptionsDialogScreen
 import eu.kanade.presentation.updates.UpdatesDeleteConfirmationDialog
 import eu.kanade.presentation.updates.anime.AnimeUpdateScreen
+import eu.kanade.presentation.util.LocalNavigateUp
 import eu.kanade.tachiyomi.ui.entries.anime.AnimeScreen
 import eu.kanade.tachiyomi.ui.home.HomeScreen
 import eu.kanade.tachiyomi.ui.main.MainActivity
 import eu.kanade.tachiyomi.ui.player.settings.PlayerPreferences
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.launch
 import mihon.feature.upcoming.anime.UpcomingAnimeScreen
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.util.lang.launchIO
@@ -47,17 +47,7 @@ fun Screen.animeUpdatesTab(
     val scope = rememberCoroutineScope()
     val state by screenModel.state.collectAsState()
 
-    val navigateUp: (() -> Unit)? = if (fromMore) {
-        {
-            if (navigator.lastItem == HomeScreen) {
-                scope.launch { HomeScreen.openTab(HomeScreen.Tab.AnimeLib()) }
-            } else {
-                navigator.pop()
-            }
-        }
-    } else {
-        null
-    }
+    val navigateUp: (() -> Unit)? = if (fromMore) LocalNavigateUp.current else null
 
     suspend fun openEpisode(updateItem: AnimeUpdatesItem, altPlayer: Boolean = false) {
         val playerPreferences: PlayerPreferences by injectLazy()

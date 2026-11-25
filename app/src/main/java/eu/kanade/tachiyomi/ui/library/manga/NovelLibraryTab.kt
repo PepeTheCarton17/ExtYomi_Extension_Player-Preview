@@ -47,6 +47,7 @@ import eu.kanade.presentation.library.components.SeriesGroupDialog
 import eu.kanade.presentation.library.manga.MangaLibraryContent
 import eu.kanade.presentation.library.manga.MangaLibrarySettingsDialog
 import eu.kanade.presentation.more.onboarding.GETTING_STARTED_URL
+import eu.kanade.presentation.util.LocalNavigateUp
 import eu.kanade.presentation.util.Tab
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.library.manga.MangaLibraryUpdateJob
@@ -157,17 +158,7 @@ data object NovelLibraryTab : Tab {
 
         val fromMore = NavTab.Novel.prefKey !in currentBottomNavTabs()
 
-        val navigateUp: (() -> Unit)? = if (fromMore) {
-            {
-                if (navigator.lastItem == HomeScreen) {
-                    scope.launch { HomeScreen.openTab(HomeScreen.Tab.AnimeLib()) }
-                } else {
-                    navigator.pop()
-                }
-            }
-        } else {
-            null
-        }
+        val navigateUp: (() -> Unit)? = if (fromMore) LocalNavigateUp.current else null
 
         val defaultTitle = stringResource(AYMR.strings.label_novel)
 

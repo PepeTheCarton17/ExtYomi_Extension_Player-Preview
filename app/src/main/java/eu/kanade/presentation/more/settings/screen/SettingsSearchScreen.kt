@@ -339,9 +339,10 @@ private fun visibleSettingScreens(): List<SearchableSettings> = buildList {
     add(SettingsDataScreen)
     add(SettingsSecurityScreen)
     add(SettingsAdvancedScreen)
+    // Library is visible in every standalone (filtered by content kind inside the screen).
+    add(SettingsLibraryScreen)
     if (!StandaloneScope.isActive) {
-        // Keep the search index in sync with SettingsMainScreen.
-        add(SettingsLibraryScreen)
+        // Browse has no meaning in a standalone.
         add(SettingsBrowseScreen)
     }
     if (!StandaloneScope.appliesTo(StandaloneScope.KIND_ANIME)) {
