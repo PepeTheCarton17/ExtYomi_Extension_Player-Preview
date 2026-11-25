@@ -16,20 +16,18 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,16 +43,20 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import coil3.compose.AsyncImage
 import eu.kanade.domain.ui.StandaloneScope
+import eu.kanade.presentation.components.AppBar
+import eu.kanade.presentation.components.AppBarActions
+import eu.kanade.presentation.components.SearchToolbar
 import eu.kanade.tachiyomi.animesource.AnimeCatalogueSource
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.model.FilterList
-import eu.kanade.tachiyomi.ui.browse.anime.source.browse.BrowseAnimeSourceScreen
+import eu.kanade.tachiyomi.ui.browse.anime.extension.details.AnimeSourcePreferencesScreen
 import eu.kanade.tachiyomi.ui.browse.anime.source.browse.SourceFilterAnimeDialog
-import eu.kanade.tachiyomi.ui.browse.manga.source.browse.BrowseMangaSourceScreen
+import eu.kanade.tachiyomi.ui.browse.manga.extension.details.MangaSourcePreferencesScreen
 import eu.kanade.tachiyomi.ui.browse.manga.source.browse.SourceFilterMangaDialog
 import eu.kanade.tachiyomi.ui.entries.anime.AnimeScreen
 import eu.kanade.tachiyomi.ui.entries.manga.MangaScreen
+import kotlinx.collections.immutable.persistentListOf
 import tachiyomi.domain.source.anime.service.AnimeSourceManager
 import tachiyomi.domain.source.manga.service.MangaSourceManager
 import tachiyomi.i18n.MR
@@ -73,22 +75,34 @@ private data class LocalFeedSection(
 
 /**
  * Home of a generated standalone. Everything shown here comes from its single extension; the
- * public API only decides which real entries are suggested. Search and filters reuse the normal
- * single-source catalogue screen instead of the multi-extension Explore experience.
+ * public API only decides which real entries are suggested. Search and filters run here against
+ * the bundled source instead of redirecting to the multi-extension Explore experience.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StandaloneLocalHomeFeedScreen(
     screenModel: StandaloneFeedScreenModel,
     modifier: Modifier = Modifier,
+    requestSettings: Boolean = false,
+    onSettingsHandled: () -> Unit = {},
 ) {
     val state by screenModel.state.collectAsState()
     val navigator = LocalNavigator.currentOrThrow
     val isAnime = StandaloneScope.appliesTo(StandaloneScope.KIND_ANIME)
     var selectedTab by remember { mutableStateOf(LocalHomeTab.ALL) }
     var showFilterSheet by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf<String?>(null) }
     var animeFilters by remember { mutableStateOf<AnimeFilterList?>(null) }
     var mangaFilters by remember { mutableStateOf<FilterList?>(null) }
+
+    // Reselecting the Home tab opens the feed settings, as in the generator app.
+    LaunchedEffect(requestSettings) {
+        if (requestSettings) {
+            showSettings = true
+            onSettingsHandled()
+        }
+    }
 
     val tabs = buildList {
         add(LocalHomeTab.ALL)
@@ -107,13 +121,13 @@ fun StandaloneLocalHomeFeedScreen(
         return source?.let { runCatching { it.getFilterList() }.getOrNull() } ?: FilterList()
     }
 
-    // Search still goes to the single-source catalogue. Filters stay here, in the Home.
-    fun openSourceCatalogue() {
+    // Same destination as the catalogue's settings action: the bundled extension's preferences.
+    fun openSourceSettings() {
         val sourceId = StandaloneScope.sourceId
         if (isAnime) {
-            navigator.push(BrowseAnimeSourceScreen(sourceId, null))
+            navigator.push(AnimeSourcePreferencesScreen(sourceId))
         } else {
-            navigator.push(BrowseMangaSourceScreen(sourceId, null))
+            navigator.push(MangaSourcePreferencesScreen(sourceId))
         }
     }
 
@@ -137,24 +151,38 @@ fun StandaloneLocalHomeFeedScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
+            // Search happens here: the text is sent to the bundled source (auto-selecting a
+            // matching filter) instead of redirecting to the other catalogue.
+            SearchToolbar(
+                searchQuery = searchQuery,
+                onChangeSearchQuery = { searchQuery = it },
+                titleContent = {
                     Text(
                         text = stringResource(MR.strings.standalone_feed_title),
                         style = MaterialTheme.typography.titleLarge,
                     )
                 },
-                actions = {
-                    IconButton(onClick = { openSourceCatalogue() }) {
-                        Icon(
-                            imageVector = Icons.Filled.Search,
-                            contentDescription = stringResource(MR.strings.action_search),
-                        )
-                    }
+                onSearch = screenModel::search,
+                onClickCloseSearch = {
+                    searchQuery = null
+                    screenModel.clearFilters()
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                ),
+                actions = {
+                    AppBarActions(
+                        actions = persistentListOf(
+                            AppBar.Action(
+                                title = stringResource(MR.strings.standalone_feed_settings),
+                                icon = Icons.Outlined.Tune,
+                                onClick = { showSettings = true },
+                            ),
+                            AppBar.Action(
+                                title = stringResource(MR.strings.action_settings),
+                                icon = Icons.Outlined.Settings,
+                                onClick = { openSourceSettings() },
+                            ),
+                        ),
+                    )
+                },
             )
         },
     ) { padding ->
@@ -240,12 +268,20 @@ fun StandaloneLocalHomeFeedScreen(
                                         .padding(horizontal = 16.dp, vertical = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
+                                    val filterTitle = stringResource(MR.strings.action_filter)
+                                    val filterLabel = buildString {
+                                        append(filterTitle)
+                                        state.activeFilterName?.let { append(" · ").append(it) }
+                                    }
                                     Text(
-                                        text = stringResource(MR.strings.action_filter),
+                                        text = filterLabel,
                                         style = MaterialTheme.typography.titleMedium,
                                         modifier = Modifier.weight(1f),
                                     )
-                                    TextButton(onClick = screenModel::clearFilters) {
+                                    TextButton(onClick = {
+                                        screenModel.clearFilters()
+                                        searchQuery = null
+                                    }) {
                                         Text(stringResource(MR.strings.action_filter_empty))
                                     }
                                 }
@@ -258,7 +294,15 @@ fun StandaloneLocalHomeFeedScreen(
                         } else {
                             if (state.showContinue && state.continueList.isNotEmpty()) {
                                 item {
-                                    LocalSectionTitle(stringResource(MR.strings.standalone_feed_continue))
+                                    LocalSectionTitle(
+                                        stringResource(
+                                            if (isAnime) {
+                                                MR.strings.standalone_feed_continue_watching
+                                            } else {
+                                                MR.strings.standalone_feed_continue_reading
+                                            },
+                                        ),
+                                    )
                                     LazyRow(
                                         contentPadding = PaddingValues(horizontal = 16.dp),
                                         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -360,6 +404,20 @@ fun StandaloneLocalHomeFeedScreen(
                 )
             }
         }
+    }
+
+    if (showSettings) {
+        FeedSettingsDialog(
+            state = state,
+            onDismiss = { showSettings = false },
+            onToggleFeatured = screenModel::toggleFeatured,
+            onToggleContinue = screenModel::toggleContinue,
+            onToggleRecommended = screenModel::toggleRecommended,
+            onTogglePopular = screenModel::togglePopular,
+            onToggleAutoScrollHero = screenModel::toggleAutoScrollHero,
+            onToggleOnlyAvailable = screenModel::toggleOnlyAvailable,
+            onSetItemsPerSection = screenModel::setItemsPerSection,
+        )
     }
 }
 

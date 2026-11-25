@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.vectorResource
 import dev.icerock.moko.resources.StringResource
+import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.presentation.util.Tab
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.ui.browse.BrowseTab
@@ -84,5 +85,30 @@ enum class NavTab(
 
         /** Optional tabs not in the bottom bar; reached from the More tab. */
         fun hidden(enabled: Set<String>): List<NavTab> = entries.filter { it.prefKey !in enabled }
+
+        /**
+         * Tabs that make sense in a standalone app of [kind]. The other content kinds and the
+         * multi-source Explore tab must never be offered there, but the user can still choose
+         * whether History sits in the bottom bar or in More.
+         */
+        fun allowedInStandalone(kind: String): List<NavTab> = when (kind) {
+            StandaloneScope.KIND_ANIME -> listOf(Home, Anime, Updates, History)
+            StandaloneScope.KIND_MANGA -> listOf(Home, Manga, Updates, History)
+            StandaloneScope.KIND_NOVEL -> listOf(Home, Novel, Updates, History)
+            else -> ordered("")
+        }
+
+        /**
+         * Effective bottom-bar tabs for a standalone app. Home and Updates are mandatory; History
+         * keeps the saved choice (off by default). Foreign tabs are dropped even if an older build
+         * saved them in [enabled].
+         */
+        fun enabledInStandalone(enabled: Set<String>, kind: String): Set<String> {
+            val allowed = allowedInStandalone(kind).map { it.prefKey }.toSet()
+            return (enabled intersect allowed) + Home.prefKey + Updates.prefKey
+        }
+
+        /** Home and Updates cannot be removed from a standalone navigation bar. */
+        fun isFixedInStandalone(navTab: NavTab): Boolean = navTab == Home || navTab == Updates
     }
 }

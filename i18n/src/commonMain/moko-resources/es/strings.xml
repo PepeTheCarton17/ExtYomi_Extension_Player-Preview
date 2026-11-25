@@ -297,6 +297,8 @@
     <string name="standalone_feed_movies">Películas</string>
     <string name="standalone_feed_series">Series</string>
     <string name="standalone_feed_continue">Continuar viendo y leyendo</string>
+    <string name="standalone_feed_continue_watching">Continuar viendo</string>
+    <string name="standalone_feed_continue_reading">Continuar leyendo</string>
     <string name="standalone_feed_recommended">Recomendados para ti</string>
     <string name="standalone_feed_popular">Populares ahora</string>
     <string name="standalone_feed_trending">Tendencias</string>

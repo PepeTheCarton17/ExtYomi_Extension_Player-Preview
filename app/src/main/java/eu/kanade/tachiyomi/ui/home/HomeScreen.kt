@@ -130,7 +130,7 @@ object HomeScreen : Screen() {
         // Existing installs do not have "home" in their saved set, so it used to be force-added.
         // In the host it is now controlled by the "New Home" switch in Appearance.
         val effectiveEnabledTabs = when {
-            StandaloneScope.isActive -> enabledTabs + NavTab.Home.prefKey
+            StandaloneScope.isActive -> NavTab.enabledInStandalone(enabledTabs, StandaloneScope.kind)
             newHomeEnabled -> enabledTabs + NavTab.Home.prefKey
             // "home" is part of NavTab.DEFAULT, so existing installs keep it in the saved set.
             // Removing it here makes the Appearance switch actually hide the new Home in the host.
@@ -141,44 +141,47 @@ object HomeScreen : Screen() {
             StandaloneScope.KIND_NOVEL -> NovelLibraryTab
             else -> AnimeLibraryTab
         }
+        // FEED is the single source's catalogue; NEW_HOME is the Animetail-style feed on the
+        // house icon. The library is never used as the feed.
+        val standaloneFeedTab = if (standaloneHomeMode == StandaloneHomeMode.FEED) {
+            StandaloneCatalogueTab
+        } else {
+            StandaloneFeedTab
+        }
         val shownTabs = if (StandaloneScope.isActive) {
-            // Only the home selected in Appearance is in the bottom bar: either the single source's
-            // catalogue or the Animetail-style feed (which still has its own search icon). Showing
-            // both at once was the v0.1.11 regression.
+            // Honour "Estilo de navegación" inside the allowed tabs: Home, this app's library,
+            // Updates and (optionally) History. Foreign kinds and Explore are never offered.
             buildList {
-                if (standaloneHomeMode == StandaloneHomeMode.FEED) {
-                    add(StandaloneCatalogueTab)
-                } else {
-                    add(StandaloneFeedTab)
+                NavTab.ordered(tabOrder).forEach { navTab ->
+                    if (navTab.prefKey in effectiveEnabledTabs) {
+                        add(
+                            when (navTab) {
+                                NavTab.Home -> standaloneFeedTab
+                                NavTab.Anime, NavTab.Manga, NavTab.Novel -> standaloneLibraryTab
+                                NavTab.Updates -> UpdatesTab
+                                NavTab.History -> HistoriesTab
+                                NavTab.Browse -> standaloneFeedTab
+                            },
+                        )
+                    }
                 }
-                add(standaloneLibraryTab)
                 add(MoreTab)
             }
         } else {
             NavTab.shownTabs(effectiveEnabledTabs, tabOrder)
         }
+        val allowedStandaloneTabs = StandaloneScope.kind.takeIf { StandaloneScope.isActive }
+            ?.let(NavTab::allowedInStandalone)
+            ?.map { it.prefKey }
+            ?.toSet()
         val hiddenTabs = NavTab.hidden(effectiveEnabledTabs)
             .filter { navTab ->
                 // A standalone app must not offer navigation into the other content kinds.
-                when {
-                    StandaloneScope.appliesTo(StandaloneScope.KIND_ANIME) ->
-                        navTab != NavTab.Manga && navTab != NavTab.Novel
-                    StandaloneScope.appliesTo(StandaloneScope.KIND_MANGA) ->
-                        navTab != NavTab.Anime && navTab != NavTab.Novel
-                    StandaloneScope.appliesTo(StandaloneScope.KIND_NOVEL) ->
-                        navTab != NavTab.Anime && navTab != NavTab.Manga
-                    else -> true
-                }
+                allowedStandaloneTabs?.let { navTab.prefKey in it } ?: true
             }
             .map { it.tab }
         val homeTab = if (StandaloneScope.isActive) {
-            // FEED is the single source's catalogue; NEW_HOME is the Animetail-style feed on the
-            // house icon. The library is never used as the feed.
-            if (standaloneHomeMode == StandaloneHomeMode.FEED) {
-                StandaloneCatalogueTab
-            } else {
-                StandaloneFeedTab
-            }
+            standaloneFeedTab
         } else {
             // The start-screen tab may have been hidden; fall back to the first shown tab.
             defaultTab.takeIf { it in shownTabs } ?: shownTabs.first()
