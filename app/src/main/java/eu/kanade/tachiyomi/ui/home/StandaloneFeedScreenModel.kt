@@ -405,8 +405,9 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
     private suspend fun refreshFromSource(continueList: List<ContinueItem>) {
         val animeScope = StandaloneScope.appliesTo(StandaloneScope.KIND_ANIME)
 
-        // Every entry the source exposes through its popular listing, across all pages.
-        val allEntries = if (animeScope) loadAllAnimeEntries() else loadAllMangaEntries()
+        // "Todo" and "Populares" start from the catalogue's popular page and paginate from there.
+        val popularResult = if (animeScope) popularAnimePage(1) else popularMangaPage(1)
+        val allEntries = popularResult.first
 
         val (trendingName, allCategoryNames) = if (animeScope) {
             val source = animeSourceManager.get(sourceId) as? AnimeCatalogueSource
@@ -427,13 +428,12 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
             if (animeScope) searchAnimeWith(name) else searchMangaWith(name)
 
         val trendingResult = trendingName?.let { fetchFilter(it) } ?: (emptyList<FeedItem>() to false)
-        // Recents and popular use the same listings as the normal catalogue.
+        // "Recientes" uses the same latest listing as the normal catalogue.
         val recentResult = if (animeScope) latestAnimePage(1) else latestMangaPage(1)
-        val popularResult = if (animeScope) popularAnimePage(1) else popularMangaPage(1)
         val categories = buildList {
             categoryNames.forEach { name ->
                 val result = fetchFilter(name)
-                if (result.first.isNotEmpty()) add(FeedCategory(name, result.first))
+                if (result.first.isNotEmpty()) add(FeedCategory(name, result.first, result.second))
             }
         }
 
@@ -460,7 +460,8 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
             if (popularResult.first.isNotEmpty()) {
                 put(SECTION_POPULAR, FeedPagination(1, popularResult.second))
             }
-            categories.forEach { put(categoryKey(it.name), FeedPagination(1)) }
+            put(SECTION_ALL, FeedPagination(1, popularResult.second))
+            categories.forEach { put(categoryKey(it.name), FeedPagination(1, it.hasNextPage)) }
         }
         mutableState.update {
             it.copy(
@@ -479,32 +480,6 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
                 sectionPages = sectionPages,
                 continueList = continueList,
             )
-        }
-    }
-
-    private suspend fun loadAllAnimeEntries(): List<FeedItem> = withIOContext {
-        buildList {
-            var page = 1
-            while (page <= MAX_CATALOGUE_PAGES) {
-                val (items, hasNextPage) = popularAnimePage(page)
-                if (items.isEmpty()) break
-                addAll(items)
-                if (!hasNextPage) break
-                page++
-            }
-        }
-    }
-
-    private suspend fun loadAllMangaEntries(): List<FeedItem> = withIOContext {
-        buildList {
-            var page = 1
-            while (page <= MAX_CATALOGUE_PAGES) {
-                val (items, hasNextPage) = popularMangaPage(page)
-                if (items.isEmpty()) break
-                addAll(items)
-                if (!hasNextPage) break
-                page++
-            }
         }
     }
 
@@ -699,6 +674,11 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
                 } else {
                     popularMangaPage(pagination.page + 1)
                 }
+                key == SECTION_ALL -> if (isAnimeScope) {
+                    popularAnimePage(pagination.page + 1)
+                } else {
+                    popularMangaPage(pagination.page + 1)
+                }
                 else -> emptyList<FeedItem>() to false
             }
             val (items, hasNext) = result
@@ -732,6 +712,9 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
                     }
                     key == SECTION_POPULAR -> updated.copy(
                         popular = appendUnique(state.popular, items),
+                    )
+                    key == SECTION_ALL -> updated.copy(
+                        allEntries = appendUnique(state.allEntries, items),
                     )
                     else -> updated
                 }
@@ -842,6 +825,7 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
     data class FeedCategory(
         val name: String,
         val items: List<FeedItem>,
+        val hasNextPage: Boolean = false,
     )
 
     @Immutable
@@ -880,6 +864,7 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
     )
 
     companion object {
+        const val SECTION_ALL = "all"
         const val SECTION_TRENDING = "trending"
         const val SECTION_RECENT = "recent"
         const val SECTION_POPULAR = "popular"
@@ -888,7 +873,6 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
 
         fun categoryKey(name: String) = CATEGORY_PREFIX + name
 
-        const val MAX_CATALOGUE_PAGES = 15
         const val PAGE_TIMEOUT = 15_000L
         const val SEARCH_TIMEOUT = 8_000L
         const val POPULAR_FALLBACK_COUNT = 20
