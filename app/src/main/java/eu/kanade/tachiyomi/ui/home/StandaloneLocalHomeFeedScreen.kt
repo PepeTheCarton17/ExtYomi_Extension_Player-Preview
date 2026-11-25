@@ -13,13 +13,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Scaffold
@@ -30,6 +36,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -65,12 +72,18 @@ import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.screens.LoadingScreen
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import androidx.compose.foundation.lazy.grid.items as gridItems
 
-private enum class LocalHomeTab { ALL, POPULAR, TRENDING, FILTERS }
+private enum class LocalHomeTab { ALL, POPULAR, RECENT, TRENDING, FILTERS }
+
+private const val SECTION_ALL = "all"
 
 private data class LocalFeedSection(
+    val key: String,
     val title: String,
     val items: List<StandaloneFeedScreenModel.FeedItem>,
+    val hasNextPage: Boolean = false,
+    val isLoadingMore: Boolean = false,
 )
 
 /**
@@ -90,6 +103,8 @@ fun StandaloneLocalHomeFeedScreen(
     val navigator = LocalNavigator.currentOrThrow
     val isAnime = StandaloneScope.appliesTo(StandaloneScope.KIND_ANIME)
     var selectedTab by remember { mutableStateOf(LocalHomeTab.ALL) }
+    // "Todo" is the catalogue-like section and starts in cover-grid mode.
+    val gridSections = remember { mutableStateMapOf<String, Boolean>(SECTION_ALL to true) }
     var showFilterSheet by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf<String?>(null) }
@@ -107,6 +122,7 @@ fun StandaloneLocalHomeFeedScreen(
     val tabs = buildList {
         add(LocalHomeTab.ALL)
         add(LocalHomeTab.POPULAR)
+        add(LocalHomeTab.RECENT)
         if (state.hasTrending) add(LocalHomeTab.TRENDING)
         add(LocalHomeTab.FILTERS)
     }
@@ -162,10 +178,14 @@ fun StandaloneLocalHomeFeedScreen(
                         style = MaterialTheme.typography.titleLarge,
                     )
                 },
-                onSearch = screenModel::search,
+                onSearch = { query ->
+                    screenModel.search(query)
+                    selectedTab = LocalHomeTab.FILTERS
+                },
                 onClickCloseSearch = {
                     searchQuery = null
                     screenModel.clearFilters()
+                    selectedTab = LocalHomeTab.ALL
                 },
                 actions = {
                     AppBarActions(
@@ -203,16 +223,56 @@ fun StandaloneLocalHomeFeedScreen(
 
             val filteredEntries = state.filteredEntries
 
-            // Todos shows every entry of the extension: categories, popular and trending are
-            // interleaved as divided sections instead of the old anime/manga/movie chips.
-            val sections = buildList<LocalFeedSection> {
-                addAll(state.categorySections.map { LocalFeedSection(it.name, it.items) })
-                add(LocalFeedSection(stringResource(MR.strings.standalone_feed_popular), state.popular))
-                if (state.hasTrending) {
-                    add(LocalFeedSection(stringResource(MR.strings.standalone_feed_trending), state.trending))
-                }
-                add(LocalFeedSection(stringResource(MR.strings.standalone_feed_all), state.allEntries))
+            fun section(
+                key: String,
+                title: String,
+                items: List<StandaloneFeedScreenModel.FeedItem>,
+            ): LocalFeedSection {
+                val pagination = state.sectionPages[key]
+                    ?: StandaloneFeedScreenModel.FeedPagination()
+                return LocalFeedSection(
+                    key = key,
+                    title = title,
+                    items = items,
+                    hasNextPage = pagination.hasNextPage,
+                    isLoadingMore = pagination.isLoadingMore,
+                )
             }
+
+            val filterLabel = buildString {
+                append(stringResource(MR.strings.action_filter))
+                state.activeFilterName?.let { append(" · ").append(it) }
+            }
+            val recentSection = section(
+                StandaloneFeedScreenModel.SECTION_RECENT,
+                stringResource(MR.strings.standalone_feed_recent),
+                state.recent,
+            )
+            val popularSection = section(
+                StandaloneFeedScreenModel.SECTION_POPULAR,
+                stringResource(MR.strings.standalone_feed_popular),
+                state.popular,
+            )
+            val trendingSection = section(
+                StandaloneFeedScreenModel.SECTION_TRENDING,
+                stringResource(MR.strings.standalone_feed_trending),
+                state.trending,
+            )
+            val filteredSection = section(
+                StandaloneFeedScreenModel.SECTION_FILTERED,
+                filterLabel,
+                filteredEntries.orEmpty(),
+            )
+            val recommendedSection = section(
+                "recommended",
+                stringResource(MR.strings.standalone_feed_recommended),
+                state.recommended,
+            )
+            val allSection = section(
+                SECTION_ALL,
+                stringResource(MR.strings.standalone_feed_all),
+                state.allEntries,
+            )
 
             val nothingToShow = when (selectedTab) {
                 LocalHomeTab.ALL -> if (filteredEntries != null) {
@@ -220,12 +280,14 @@ fun StandaloneLocalHomeFeedScreen(
                 } else {
                     state.allEntries.isEmpty() &&
                         state.popular.isEmpty() &&
+                        state.recent.isEmpty() &&
                         state.recommended.isEmpty() &&
                         state.continueList.isEmpty()
                 }
                 LocalHomeTab.POPULAR -> state.popular.isEmpty()
+                LocalHomeTab.RECENT -> state.recent.isEmpty()
                 LocalHomeTab.TRENDING -> state.trending.isEmpty()
-                LocalHomeTab.FILTERS -> false
+                LocalHomeTab.FILTERS -> filteredEntries?.isEmpty() == true
             }
 
             LazyColumn(
@@ -247,6 +309,7 @@ fun StandaloneLocalHomeFeedScreen(
                                 onClick = {
                                     if (tab == LocalHomeTab.FILTERS) {
                                         // Open the filter sheet in this Home, without navigating.
+                                        selectedTab = tab
                                         openFilters()
                                     } else {
                                         selectedTab = tab
@@ -262,46 +325,39 @@ fun StandaloneLocalHomeFeedScreen(
                     LocalHomeTab.ALL -> {
                         if (filteredEntries != null) {
                             item {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    val filterTitle = stringResource(MR.strings.action_filter)
-                                    val filterLabel = buildString {
-                                        append(filterTitle)
-                                        state.activeFilterName?.let { append(" · ").append(it) }
-                                    }
-                                    Text(
-                                        text = filterLabel,
-                                        style = MaterialTheme.typography.titleMedium,
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                    TextButton(onClick = {
-                                        screenModel.clearFilters()
-                                        searchQuery = null
-                                    }) {
-                                        Text(stringResource(MR.strings.action_filter_empty))
-                                    }
+                                FilterHeader(filterLabel) {
+                                    screenModel.clearFilters()
+                                    searchQuery = null
+                                    selectedTab = LocalHomeTab.ALL
                                 }
-                                LocalFeedRow(
-                                    title = stringResource(MR.strings.action_filter),
-                                    items = filteredEntries,
+                            }
+                            item {
+                                LocalFeedSectionContent(
+                                    section = filteredSection,
+                                    itemsPerSection = state.itemsPerSection,
+                                    isGrid = gridSections[filteredSection.key] == true,
+                                    onToggleGrid = {
+                                        gridSections[filteredSection.key] =
+                                            !(gridSections[filteredSection.key] ?: false)
+                                    },
                                     onClick = ::onFeedItemClick,
+                                    onLoadMore = { screenModel.loadMoreSection(filteredSection.key) },
                                 )
                             }
                         } else {
                             if (state.showContinue && state.continueList.isNotEmpty()) {
                                 item {
                                     LocalSectionTitle(
-                                        stringResource(
+                                        title = stringResource(
                                             if (isAnime) {
                                                 MR.strings.standalone_feed_continue_watching
                                             } else {
                                                 MR.strings.standalone_feed_continue_reading
                                             },
                                         ),
+                                        isGrid = false,
+                                        onToggle = {},
+                                        showToggle = false,
                                     )
                                     LazyRow(
                                         contentPadding = PaddingValues(horizontal = 16.dp),
@@ -319,46 +375,103 @@ fun StandaloneLocalHomeFeedScreen(
                                     }
                                 }
                             }
-                            if (state.showRecommended && state.recommended.isNotEmpty()) {
-                                item {
-                                    LocalFeedRow(
-                                        title = stringResource(MR.strings.standalone_feed_recommended),
-                                        items = state.recommended,
-                                        onClick = ::onFeedItemClick,
-                                    )
-                                }
+                            item {
+                                LocalFeedSectionContent(
+                                    section = recommendedSection,
+                                    itemsPerSection = state.itemsPerSection,
+                                    isGrid = gridSections[recommendedSection.key] == true,
+                                    onToggleGrid = {
+                                        gridSections[recommendedSection.key] =
+                                            !(gridSections[recommendedSection.key] ?: false)
+                                    },
+                                    onClick = ::onFeedItemClick,
+                                    onLoadMore = { screenModel.loadMoreSection(recommendedSection.key) },
+                                )
                             }
-                            sections.forEach { section ->
-                                item(key = "local-section-${section.title}") {
+                            val sections = state.categorySections.map {
+                                section(
+                                    StandaloneFeedScreenModel.categoryKey(it.name),
+                                    it.name,
+                                    it.items,
+                                )
+                            } + recentSection + popularSection + trendingSection + allSection
+                            sections.forEach { feedSection ->
+                                item(key = "local-section-${feedSection.key}") {
                                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-                                    LocalFeedRow(
-                                        title = section.title,
-                                        items = section.items,
+                                    LocalFeedSectionContent(
+                                        section = feedSection,
+                                        itemsPerSection = state.itemsPerSection,
+                                        isGrid = gridSections[feedSection.key] == true,
+                                        onToggleGrid = {
+                                            gridSections[feedSection.key] = !(gridSections[feedSection.key] ?: false)
+                                        },
                                         onClick = ::onFeedItemClick,
+                                        onLoadMore = { screenModel.loadMoreSection(feedSection.key) },
                                     )
                                 }
                             }
                         }
                     }
-                    LocalHomeTab.POPULAR -> {
-                        item {
-                            LocalFeedRow(
-                                title = stringResource(MR.strings.standalone_feed_popular),
-                                items = state.popular,
-                                onClick = ::onFeedItemClick,
-                            )
+                    LocalHomeTab.POPULAR -> item {
+                        LocalFeedSectionContent(
+                            section = popularSection,
+                            itemsPerSection = state.itemsPerSection,
+                            isGrid = gridSections[popularSection.key] == true,
+                            onToggleGrid = {
+                                gridSections[popularSection.key] = !(gridSections[popularSection.key] ?: false)
+                            },
+                            onClick = ::onFeedItemClick,
+                            onLoadMore = { screenModel.loadMoreSection(popularSection.key) },
+                        )
+                    }
+                    LocalHomeTab.RECENT -> item {
+                        LocalFeedSectionContent(
+                            section = recentSection,
+                            itemsPerSection = state.itemsPerSection,
+                            isGrid = gridSections[recentSection.key] == true,
+                            onToggleGrid = {
+                                gridSections[recentSection.key] = !(gridSections[recentSection.key] ?: false)
+                            },
+                            onClick = ::onFeedItemClick,
+                            onLoadMore = { screenModel.loadMoreSection(recentSection.key) },
+                        )
+                    }
+                    LocalHomeTab.TRENDING -> item {
+                        LocalFeedSectionContent(
+                            section = trendingSection,
+                            itemsPerSection = state.itemsPerSection,
+                            isGrid = gridSections[trendingSection.key] == true,
+                            onToggleGrid = {
+                                gridSections[trendingSection.key] = !(gridSections[trendingSection.key] ?: false)
+                            },
+                            onClick = ::onFeedItemClick,
+                            onLoadMore = { screenModel.loadMoreSection(trendingSection.key) },
+                        )
+                    }
+                    LocalHomeTab.FILTERS -> {
+                        if (filteredEntries != null) {
+                            item {
+                                FilterHeader(filterLabel) {
+                                    screenModel.clearFilters()
+                                    searchQuery = null
+                                    selectedTab = LocalHomeTab.FILTERS
+                                }
+                            }
+                            item {
+                                LocalFeedSectionContent(
+                                    section = filteredSection,
+                                    itemsPerSection = state.itemsPerSection,
+                                    isGrid = gridSections[filteredSection.key] == true,
+                                    onToggleGrid = {
+                                        gridSections[filteredSection.key] =
+                                            !(gridSections[filteredSection.key] ?: false)
+                                    },
+                                    onClick = ::onFeedItemClick,
+                                    onLoadMore = { screenModel.loadMoreSection(filteredSection.key) },
+                                )
+                            }
                         }
                     }
-                    LocalHomeTab.TRENDING -> {
-                        item {
-                            LocalFeedRow(
-                                title = stringResource(MR.strings.standalone_feed_trending),
-                                items = state.trending,
-                                onClick = ::onFeedItemClick,
-                            )
-                        }
-                    }
-                    LocalHomeTab.FILTERS -> Unit
                 }
 
                 if (nothingToShow) {
@@ -378,12 +491,15 @@ fun StandaloneLocalHomeFeedScreen(
         if (isAnime) {
             animeFilters?.let { filters ->
                 SourceFilterAnimeDialog(
-                    onDismissRequest = { showFilterSheet = false },
+                    onDismissRequest = {
+                        showFilterSheet = false
+                        if (state.filteredEntries == null) selectedTab = LocalHomeTab.ALL
+                    },
                     filters = filters,
                     onReset = { animeFilters = freshAnimeFilters() },
                     onFilter = {
                         screenModel.applyAnimeFilters(filters)
-                        selectedTab = LocalHomeTab.ALL
+                        selectedTab = LocalHomeTab.FILTERS
                         showFilterSheet = false
                     },
                     onUpdate = { animeFilters = it },
@@ -392,12 +508,15 @@ fun StandaloneLocalHomeFeedScreen(
         } else {
             mangaFilters?.let { filters ->
                 SourceFilterMangaDialog(
-                    onDismissRequest = { showFilterSheet = false },
+                    onDismissRequest = {
+                        showFilterSheet = false
+                        if (state.filteredEntries == null) selectedTab = LocalHomeTab.ALL
+                    },
                     filters = filters,
                     onReset = { mangaFilters = freshMangaFilters() },
                     onFilter = {
                         screenModel.applyMangaFilters(filters)
-                        selectedTab = LocalHomeTab.ALL
+                        selectedTab = LocalHomeTab.FILTERS
                         showFilterSheet = false
                     },
                     onUpdate = { mangaFilters = it },
@@ -417,6 +536,7 @@ fun StandaloneLocalHomeFeedScreen(
             onToggleAutoScrollHero = screenModel::toggleAutoScrollHero,
             onToggleOnlyAvailable = screenModel::toggleOnlyAvailable,
             onSetItemsPerSection = screenModel::setItemsPerSection,
+            showOnlyAvailable = false,
         )
     }
 }
@@ -425,35 +545,155 @@ fun StandaloneLocalHomeFeedScreen(
 private fun labelFor(tab: LocalHomeTab): String = when (tab) {
     LocalHomeTab.ALL -> stringResource(MR.strings.standalone_feed_all)
     LocalHomeTab.POPULAR -> stringResource(MR.strings.standalone_feed_popular)
+    LocalHomeTab.RECENT -> stringResource(MR.strings.standalone_feed_recent)
     LocalHomeTab.TRENDING -> stringResource(MR.strings.standalone_feed_trending)
     LocalHomeTab.FILTERS -> stringResource(MR.strings.action_filter)
 }
 
 @Composable
-private fun LocalSectionTitle(title: String) {
-    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-        Text(text = title, style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(8.dp))
+private fun FilterHeader(label: String, onClear: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onClear) {
+            Text(stringResource(MR.strings.action_filter_empty))
+        }
+    }
+}
+
+@Composable
+private fun LocalSectionTitle(
+    title: String,
+    isGrid: Boolean,
+    onToggle: () -> Unit,
+    showToggle: Boolean = true,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.weight(1f),
+        )
+        if (showToggle) {
+            IconButton(onClick = onToggle) {
+                Icon(
+                    imageVector = if (isGrid) {
+                        Icons.Filled.KeyboardArrowDown
+                    } else {
+                        Icons.Filled.KeyboardArrowRight
+                    },
+                    contentDescription = stringResource(MR.strings.standalone_feed_toggle_view),
+                )
+            }
+        }
+    }
+    Spacer(Modifier.height(8.dp))
+}
+
+/** One Home section: horizontal rows of `itemsPerSection`, or a cover grid when toggled. */
+@Composable
+private fun LocalFeedSectionContent(
+    section: LocalFeedSection,
+    itemsPerSection: Int,
+    isGrid: Boolean,
+    onToggleGrid: () -> Unit,
+    onClick: (StandaloneFeedScreenModel.FeedItem) -> Unit,
+    onLoadMore: () -> Unit,
+) {
+    LocalSectionTitle(
+        title = section.title,
+        isGrid = isGrid,
+        onToggle = onToggleGrid,
+    )
+    if (section.items.isNotEmpty()) {
+        if (isGrid) {
+            LocalFeedGrid(items = section.items, onClick = onClick)
+        } else {
+            val unique = remember(section.items) {
+                section.items.distinctBy { it.isAnime to (it.localId ?: it.id) }
+            }
+            val chunks = unique.chunked(itemsPerSection.coerceAtLeast(1))
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                chunks.forEachIndexed { index, chunk ->
+                    LocalFeedRow(
+                        items = chunk,
+                        onClick = onClick,
+                        showLoadMore = index == chunks.lastIndex && section.hasNextPage,
+                        isLoadingMore = section.isLoadingMore,
+                        onLoadMore = onLoadMore,
+                    )
+                }
+            }
+        }
     }
 }
 
 @Composable
 private fun LocalFeedRow(
-    title: String,
+    items: List<StandaloneFeedScreenModel.FeedItem>,
+    onClick: (StandaloneFeedScreenModel.FeedItem) -> Unit,
+    showLoadMore: Boolean = false,
+    isLoadingMore: Boolean = false,
+    onLoadMore: () -> Unit = {},
+) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        items(items = items, key = { "${it.isAnime}-${it.localId ?: it.id}" }) { entry ->
+            LocalFeedCard(entry, Modifier.width(120.dp)) { onClick(entry) }
+        }
+        if (showLoadMore) {
+            item(key = "load-more") {
+                TextButton(onClick = onLoadMore, enabled = !isLoadingMore) {
+                    Text(
+                        stringResource(
+                            if (isLoadingMore) {
+                                MR.strings.standalone_feed_loading_more
+                            } else {
+                                MR.strings.standalone_feed_load_more
+                            },
+                        ),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LocalFeedGrid(
     items: List<StandaloneFeedScreenModel.FeedItem>,
     onClick: (StandaloneFeedScreenModel.FeedItem) -> Unit,
 ) {
-    val unique = remember(items) { items.distinctBy { it.localId ?: it.id } }
-    if (unique.isEmpty()) return
-    Column {
-        LocalSectionTitle(title)
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            items(items = unique, key = { "entry-${it.localId ?: it.id}" }) { entry ->
-                LocalFeedCard(entry) { onClick(entry) }
-            }
+    val unique = remember(items) { items.distinctBy { it.isAnime to (it.localId ?: it.id) } }
+    val columns = 3
+    val rows = (unique.size + columns - 1) / columns
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(columns),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(230.dp * rows)
+            .padding(horizontal = 12.dp),
+        userScrollEnabled = false,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        gridItems(items = unique, key = { "${it.isAnime}-${it.localId ?: it.id}" }) { entry ->
+            LocalFeedCard(entry, Modifier.fillMaxWidth()) { onClick(entry) }
         }
     }
 }
@@ -461,12 +701,14 @@ private fun LocalFeedRow(
 @Composable
 private fun LocalFeedCard(
     item: StandaloneFeedScreenModel.FeedItem,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
-    val clickable = Modifier
-        .width(120.dp)
-        .clip(RoundedCornerShape(8.dp))
-    Column(modifier = clickable.clickable(onClick = onClick)) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick),
+    ) {
         AsyncImage(
             model = item.coverUrl,
             contentDescription = item.title,

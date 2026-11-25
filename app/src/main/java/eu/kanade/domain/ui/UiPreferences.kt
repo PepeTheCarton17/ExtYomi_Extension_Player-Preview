@@ -44,8 +44,8 @@ class UiPreferences(
 
     fun startScreen() = preferenceStore.getEnum("start_screen", StartScreen.ANIME)
 
-    // Host only: the Animetail-style Home feed can be hidden from the navigation bar.
-    fun newHomeEnabled() = preferenceStore.getBoolean("pref_new_home_enabled", true)
+    // Cards shown per horizontal row/section in the new Home (host and standalone).
+    fun newHomeItemsPerSection() = preferenceStore.getInt("pref_new_home_items_per_section", 10)
 
     fun bottomNavTabs() = preferenceStore.getStringSet("bottom_nav_tabs", NavTab.DEFAULT)
 

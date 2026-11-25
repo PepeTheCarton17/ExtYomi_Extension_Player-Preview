@@ -217,13 +217,6 @@ object SettingsAppearanceScreen : SearchableSettings {
                             onValueChanged = { true },
                         ),
                     )
-                    add(
-                        Preference.PreferenceItem.SwitchPreference(
-                            preference = uiPreferences.newHomeEnabled(),
-                            title = stringResource(MR.strings.pref_new_home),
-                            subtitle = stringResource(MR.strings.pref_new_home_summary),
-                        ),
-                    )
                 }
                 add(
                     Preference.PreferenceItem.ListPreference(

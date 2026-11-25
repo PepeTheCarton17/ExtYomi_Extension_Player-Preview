@@ -77,6 +77,8 @@ private enum class FeedFormat {
     MANGA,
     MOVIE,
     SERIES,
+    POPULAR,
+    RECENT,
 }
 
 private fun StandaloneFeedScreenModel.FeedItem.matches(format: FeedFormat): Boolean = when (format) {
@@ -87,6 +89,8 @@ private fun StandaloneFeedScreenModel.FeedItem.matches(format: FeedFormat): Bool
     FeedFormat.SERIES -> this.format.equals("TV", ignoreCase = true) ||
         this.format.equals("TV_SHORT", ignoreCase = true) ||
         this.format.equals("ONA", ignoreCase = true)
+    // Popular and Recent are complete sections of their own, not per-card format filters.
+    FeedFormat.POPULAR, FeedFormat.RECENT -> true
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -240,6 +244,7 @@ fun StandaloneHomeFeedScreen(
                 state.trending,
                 state.recommended,
                 state.popular,
+                state.recent,
                 state.continueList,
                 selectedFormat,
                 state.onlyAvailable,
@@ -253,6 +258,7 @@ fun StandaloneHomeFeedScreen(
                     trending = state.trending.filtered(),
                     recommended = state.recommended.filtered(),
                     popular = state.popular.filtered(),
+                    recent = state.recent.filtered(),
                     continueList = state.continueList.filter { if (animeScope) it.isAnime else !it.isAnime },
                 )
             }
@@ -300,56 +306,90 @@ fun StandaloneHomeFeedScreen(
                             onClick = { selectedFormat = FeedFormat.SERIES },
                             label = { Text(stringResource(MR.strings.standalone_feed_series)) },
                         )
-                    }
-                }
-
-                if (state.showFeatured && visible.trending.isNotEmpty()) {
-                    item {
-                        HeroCarousel(
-                            items = visible.trending.take(6),
-                            autoScroll = state.autoScrollHero,
-                            onClick = onFeedItemClick,
-                            modifier = Modifier.padding(horizontal = 16.dp),
+                        FilterChip(
+                            selected = selectedFormat == FeedFormat.POPULAR,
+                            onClick = { selectedFormat = FeedFormat.POPULAR },
+                            label = { Text(stringResource(MR.strings.standalone_feed_popular)) },
+                        )
+                        FilterChip(
+                            selected = selectedFormat == FeedFormat.RECENT,
+                            onClick = { selectedFormat = FeedFormat.RECENT },
+                            label = { Text(stringResource(MR.strings.standalone_feed_recent)) },
                         )
                     }
                 }
 
-                if (state.showContinue && visible.continueList.isNotEmpty()) {
-                    item {
-                        SectionTitle(stringResource(MR.strings.standalone_feed_continue))
-                        LazyRow(
-                            contentPadding = PaddingValues(horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            items(items = visible.continueList, key = { "continue-${it.id}" }) { item ->
-                                ContinueCard(item, onClick = { onContinueClick(item) })
+                when (selectedFormat) {
+                    FeedFormat.RECENT -> item {
+                        FeedSection(
+                            enabled = true,
+                            title = stringResource(MR.strings.standalone_feed_recent),
+                            feedItems = visible.recent,
+                            onClick = onFeedItemClick,
+                        )
+                    }
+                    FeedFormat.POPULAR -> item {
+                        FeedSection(
+                            enabled = true,
+                            title = stringResource(MR.strings.standalone_feed_popular),
+                            feedItems = visible.popular,
+                            onClick = onFeedItemClick,
+                        )
+                    }
+                    else -> {
+                        if (state.showFeatured && visible.trending.isNotEmpty()) {
+                            item {
+                                HeroCarousel(
+                                    items = visible.trending.take(6),
+                                    autoScroll = state.autoScrollHero,
+                                    onClick = onFeedItemClick,
+                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                )
                             }
+                        }
+
+                        if (state.showContinue && visible.continueList.isNotEmpty()) {
+                            item {
+                                SectionTitle(stringResource(MR.strings.standalone_feed_continue))
+                                LazyRow(
+                                    contentPadding = PaddingValues(horizontal = 16.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    items(items = visible.continueList, key = { "continue-${it.id}" }) { item ->
+                                        ContinueCard(item, onClick = { onContinueClick(item) })
+                                    }
+                                }
+                            }
+                        }
+
+                        item {
+                            FeedSection(
+                                enabled = state.showRecommended,
+                                title = stringResource(MR.strings.standalone_feed_recommended),
+                                feedItems = visible.recommended,
+                                onClick = onFeedItemClick,
+                            )
+                        }
+                        item {
+                            FeedSection(
+                                enabled = state.showPopular,
+                                title = stringResource(MR.strings.standalone_feed_popular),
+                                feedItems = visible.popular,
+                                onClick = onFeedItemClick,
+                            )
                         }
                     }
                 }
 
-                item {
-                    FeedSection(
-                        enabled = state.showRecommended,
-                        title = stringResource(MR.strings.standalone_feed_recommended),
-                        feedItems = visible.recommended,
-                        onClick = onFeedItemClick,
-                    )
+                val nothingToShow = when (selectedFormat) {
+                    FeedFormat.RECENT -> visible.recent.isEmpty()
+                    FeedFormat.POPULAR -> visible.popular.isEmpty()
+                    else -> visible.trending.isEmpty() &&
+                        visible.recommended.isEmpty() &&
+                        visible.popular.isEmpty() &&
+                        visible.continueList.isEmpty()
                 }
-                item {
-                    FeedSection(
-                        enabled = state.showPopular,
-                        title = stringResource(MR.strings.standalone_feed_popular),
-                        feedItems = visible.popular,
-                        onClick = onFeedItemClick,
-                    )
-                }
-
-                if (visible.trending.isEmpty() &&
-                    visible.recommended.isEmpty() &&
-                    visible.popular.isEmpty() &&
-                    visible.continueList.isEmpty()
-                ) {
+                if (nothingToShow) {
                     item {
                         Text(
                             text = stringResource(MR.strings.standalone_feed_empty),
@@ -367,6 +407,7 @@ private data class FeedLists(
     val trending: List<StandaloneFeedScreenModel.FeedItem>,
     val recommended: List<StandaloneFeedScreenModel.FeedItem>,
     val popular: List<StandaloneFeedScreenModel.FeedItem>,
+    val recent: List<StandaloneFeedScreenModel.FeedItem>,
     val continueList: List<StandaloneFeedScreenModel.ContinueItem>,
 )
 
@@ -580,6 +621,7 @@ internal fun FeedSettingsDialog(
     onToggleAutoScrollHero: () -> Unit,
     onToggleOnlyAvailable: () -> Unit,
     onSetItemsPerSection: (Int) -> Unit,
+    showOnlyAvailable: Boolean = true,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -611,11 +653,13 @@ internal fun FeedSettingsDialog(
                     checked = state.autoScrollHero,
                     onCheckedChange = onToggleAutoScrollHero,
                 )
-                SwitchRow(
-                    label = stringResource(MR.strings.standalone_feed_only_available),
-                    checked = state.onlyAvailable,
-                    onCheckedChange = onToggleOnlyAvailable,
-                )
+                if (showOnlyAvailable) {
+                    SwitchRow(
+                        label = stringResource(MR.strings.standalone_feed_only_available),
+                        checked = state.onlyAvailable,
+                        onCheckedChange = onToggleOnlyAvailable,
+                    )
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = stringResource(
