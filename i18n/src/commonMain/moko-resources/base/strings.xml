@@ -42,8 +42,6 @@
     <string name="pref_standalone_home_mode">Start screen</string>
     <string name="pref_standalone_home_mode_feed">Feed (catalogue)</string>
     <string name="pref_standalone_home_mode_new_home">New Home</string>
-    <string name="pref_new_home">New Home</string>
-    <string name="pref_new_home_summary">Show the Animetail-style Home feed in the navigation bar</string>
     <string name="standalone_apps_summary">Turn an installed extension into its own app</string>
     <string name="standalone_no_extensions">No installed extensions found</string>
     <string name="standalone_output_folder">Output folder</string>
@@ -70,6 +68,10 @@
     <string name="standalone_feed_recommended">Recommended for you</string>
     <string name="standalone_feed_popular">Popular now</string>
     <string name="standalone_feed_trending">Trending</string>
+    <string name="standalone_feed_recent">Recent</string>
+    <string name="standalone_feed_load_more">Load more</string>
+    <string name="standalone_feed_loading_more">Loading…</string>
+    <string name="standalone_feed_toggle_view">Change view</string>
     <string name="standalone_feed_settings">Feed settings</string>
     <string name="standalone_feed_only_available">Only titles in this source</string>
     <string name="standalone_feed_auto_scroll">Auto-scroll featured</string>

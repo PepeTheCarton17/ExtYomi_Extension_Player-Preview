@@ -125,16 +125,13 @@ object HomeScreen : Screen() {
         val tabOrder by uiPreferences.bottomNavOrder().collectAsState()
         val standaloneHomeMode by uiPreferences.standaloneHomeMode().collectAsState()
         val startScreen by uiPreferences.startScreen().collectAsState()
-        val newHomeEnabled by uiPreferences.newHomeEnabled().collectAsState()
         val defaultTab = startScreen.tab
-        // Existing installs do not have "home" in their saved set, so it used to be force-added.
-        // In the host it is now controlled by the "New Home" switch in Appearance.
-        val effectiveEnabledTabs = when {
-            StandaloneScope.isActive -> NavTab.enabledInStandalone(enabledTabs, StandaloneScope.kind)
-            newHomeEnabled -> enabledTabs + NavTab.Home.prefKey
-            // "home" is part of NavTab.DEFAULT, so existing installs keep it in the saved set.
-            // Removing it here makes the Appearance switch actually hide the new Home in the host.
-            else -> enabledTabs - NavTab.Home.prefKey
+        // The Home tab follows Appearance > Navigation bar > Navigation style. The old separate
+        // "New Home" switch used to override that choice and has been removed.
+        val effectiveEnabledTabs = if (StandaloneScope.isActive) {
+            NavTab.enabledInStandalone(enabledTabs, StandaloneScope.kind)
+        } else {
+            enabledTabs
         }
         val standaloneLibraryTab = when (StandaloneScope.kind) {
             StandaloneScope.KIND_MANGA -> MangaLibraryTab
@@ -394,10 +391,10 @@ object HomeScreen : Screen() {
                 launch {
                     openTabEvent.receiveAsFlow().collectLatest {
                         tabNavigator.current = when (it) {
-                            is Tab.Home -> when {
-                                StandaloneScope.isActive -> StandaloneFeedTab
-                                newHomeEnabled -> HomeFeedTab
-                                else -> homeTab
+                            is Tab.Home -> if (StandaloneScope.isActive) {
+                                StandaloneFeedTab
+                            } else {
+                                HomeFeedTab
                             }
                             is Tab.AnimeLib -> AnimeLibraryTab
                             is Tab.Library -> MangaLibraryTab

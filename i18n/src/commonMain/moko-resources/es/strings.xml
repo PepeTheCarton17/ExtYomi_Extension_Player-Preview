@@ -274,8 +274,6 @@
     <string name="pref_standalone_home_mode">Pantalla de inicio</string>
     <string name="pref_standalone_home_mode_feed">Feed (catálogo)</string>
     <string name="pref_standalone_home_mode_new_home">Inicio nuevo</string>
-    <string name="pref_new_home">Inicio nuevo</string>
-    <string name="pref_new_home_summary">Muestra en la barra el inicio tipo Animetail</string>
     <string name="standalone_apps_summary">Convierte una extensión instalada en una app propia</string>
     <string name="standalone_no_extensions">No hay extensiones instaladas</string>
     <string name="standalone_output_folder">Carpeta de salida</string>
@@ -302,6 +300,10 @@
     <string name="standalone_feed_recommended">Recomendados para ti</string>
     <string name="standalone_feed_popular">Populares ahora</string>
     <string name="standalone_feed_trending">Tendencias</string>
+    <string name="standalone_feed_recent">Recientes</string>
+    <string name="standalone_feed_load_more">Cargar más</string>
+    <string name="standalone_feed_loading_more">Cargando…</string>
+    <string name="standalone_feed_toggle_view">Cambiar vista</string>
     <string name="standalone_feed_settings">Ajustes del feed</string>
     <string name="standalone_feed_only_available">Solo títulos de esta fuente</string>
     <string name="standalone_feed_auto_scroll">Desplazamiento automático de destacados</string>
