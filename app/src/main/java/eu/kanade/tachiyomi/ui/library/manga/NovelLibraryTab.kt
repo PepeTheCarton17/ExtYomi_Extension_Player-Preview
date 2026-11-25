@@ -141,12 +141,17 @@ data object NovelLibraryTab : Tab {
                 } else {
                     HostStandaloneSyncManager.syncAll(context.applicationContext)
                 }
-                val message = if (result.isSuccess) {
-                    MR.strings.standalone_sync_success
+                val text = if (result.isSuccess) {
+                    context.stringResource(MR.strings.standalone_sync_success)
                 } else {
-                    MR.strings.standalone_sync_failed
+                    val detail = result.exceptionOrNull()?.message?.takeIf { it.isNotBlank() }
+                    if (detail == null) {
+                        context.stringResource(MR.strings.standalone_sync_failed)
+                    } else {
+                        context.stringResource(MR.strings.standalone_sync_error_detail, detail)
+                    }
                 }
-                snackbarHostState.showSnackbar(context.stringResource(message))
+                snackbarHostState.showSnackbar(text)
             }
         }
 

@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.core.content.FileProvider
 import eu.kanade.domain.ui.GeneratedStandaloneApp
+import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.domain.ui.UiPreferences
 import kotlinx.coroutines.runBlocking
 import tachiyomi.domain.storage.service.StoragePreferences
@@ -31,74 +32,148 @@ class StandaloneDataProvider : ContentProvider() {
         val instanceId = extras?.getString(KEY_INSTANCE_ID).orEmpty()
         if (caller == context.packageName) return bundleOf(ERROR to "SELF_CALL")
 
-        val app = findApp(context, caller, instanceId)
-            ?: return bundleOf(ERROR to "UNKNOWN_CALLER")
-        val store = StandaloneSyncStore(context)
-
         return try {
-            runBlocking {
-                when (method) {
-                    METHOD_HANDSHAKE -> {
-                        val root = hostDownloadsRootUri(context)
-                        grantDownloadsRoot(context, caller, root)
-                        bundleOf(
-                            KEY_HOST_PACKAGE to context.packageName,
-                            KEY_DOWNLOADS_ROOT_URI to root.orEmpty(),
-                            KEY_REVISION to (store.load(app.instanceId)?.revision ?: 0L),
-                            KEY_SCHEMA to StandaloneSyncPayload.SCHEMA,
-                        )
-                    }
-                    METHOD_PUSH -> {
-                        val uri = extras?.getString(KEY_URI)?.let(Uri::parse)
-                            ?: return@runBlocking bundleOf(ERROR to "NO_URI")
-                        val incoming = context.contentResolver.openInputStream(uri)?.use {
-                            it.readBytes().toString(Charsets.UTF_8).toStandaloneSyncPayload()
-                        } ?: return@runBlocking bundleOf(ERROR to "UNREADABLE_URI")
-                        require(incoming.instanceId == app.instanceId) { "Instance mismatch" }
-                        require(incoming.sourceId == app.sourceId && incoming.kind == app.kind) {
-                            "Scope mismatch"
-                        }
-                        val owners = store.loadOwners()
-                        val merged = StandaloneSyncMerge.merge(store.load(app.instanceId), incoming, owners)
-                        val filtered = merged.payload.filterFor(app, merged.owners)
-                        StandaloneSnapshotApplier(
-                            sourceId = app.sourceId,
-                            kind = app.kind,
-                        ).apply(filtered)
-                        store.save(filtered)
-                        store.saveOwners(SyncOwnerIndex(merged.owners))
-                        bundleOf(KEY_ACCEPTED to true, KEY_REVISION to filtered.revision)
-                    }
-                    METHOD_PULL -> {
-                        val snapshot = store.load(app.instanceId)
-                            ?: StandaloneSyncPayload(
-                                instanceId = app.instanceId,
-                                sourceId = app.sourceId,
-                                kind = app.kind,
-                                extensionPkg = app.extensionPkg,
-                                downloadsRootUri = hostDownloadsRootUri(context),
-                            )
-                        val file = File(context.cacheDir, "standalone-sync-out.json").apply {
-                            writeText(snapshot.toJson())
-                        }
-                        val uri = FileProvider.getUriForFile(
-                            context,
-                            "${context.packageName}.provider",
-                            file,
-                        )
-                        grant(context, caller, uri)
-                        bundleOf(
-                            KEY_URI to uri.toString(),
-                            KEY_REVISION to snapshot.revision,
-                            KEY_SCHEMA to StandaloneSyncPayload.SCHEMA,
-                        )
-                    }
-                    else -> bundleOf(ERROR to "UNKNOWN_METHOD")
-                }
+            if (StandaloneScope.isActive) {
+                callAsStandalone(context, caller, method, extras)
+            } else {
+                val app = findApp(context, caller, instanceId)
+                    ?: return bundleOf(ERROR to "UNKNOWN_CALLER ($caller / $instanceId)")
+                callAsHost(context, caller, app, method, extras)
             }
         } catch (e: Exception) {
             bundleOf(ERROR to (e.message ?: "SYNC_FAILED"))
         }
+    }
+
+    /** The generated APK carries this same provider, so ExtYomi can sync in the opposite direction. */
+    private fun callAsStandalone(
+        context: Context,
+        caller: String,
+        method: String,
+        extras: Bundle?,
+    ): Bundle = runBlocking {
+        val hostPackage = StandaloneScope.syncAuthority.removeSuffix(AUTHORITY_SUFFIX)
+        check(caller == hostPackage) { "Caller $caller is not ExtYomi" }
+        when (method) {
+            METHOD_PULL_LOCAL -> {
+                val snapshot = StandaloneSnapshotBuilder(
+                    previous = StandaloneSyncStore(context).load(StandaloneScope.instanceId),
+                ).build()
+                val uri = writeSnapshot(context, caller, "standalone-sync-local.json", snapshot)
+                bundleOf(
+                    KEY_URI to uri.toString(),
+                    KEY_REVISION to snapshot.revision,
+                    KEY_SCHEMA to StandaloneSyncPayload.SCHEMA,
+                )
+            }
+            METHOD_PUSH_LOCAL -> {
+                val incoming = readSnapshot(context, extras) ?: return@runBlocking bundleOf(ERROR to "NO_URI")
+                check(incoming.instanceId == StandaloneScope.instanceId) { "Instance mismatch" }
+                check(
+                    incoming.sourceId == StandaloneScope.sourceId &&
+                        incoming.kind == StandaloneScope.kind,
+                ) { "Scope mismatch" }
+                StandaloneSnapshotApplier().apply(incoming)
+                StandaloneSyncStore(context).save(incoming)
+                bundleOf(KEY_ACCEPTED to true, KEY_REVISION to incoming.revision)
+            }
+            else -> bundleOf(ERROR to "UNKNOWN_METHOD")
+        }
+    }
+
+    private fun callAsHost(
+        context: Context,
+        caller: String,
+        app: GeneratedStandaloneApp,
+        method: String,
+        extras: Bundle?,
+    ): Bundle = runBlocking {
+        val store = StandaloneSyncStore(context)
+        when (method) {
+            METHOD_HANDSHAKE -> {
+                val root = hostDownloadsRootUri(context)
+                grantDownloadsRoot(context, caller, root)
+                bundleOf(
+                    KEY_HOST_PACKAGE to context.packageName,
+                    KEY_DOWNLOADS_ROOT_URI to root.orEmpty(),
+                    KEY_REVISION to (store.load(app.instanceId)?.revision ?: 0L),
+                    KEY_SCHEMA to StandaloneSyncPayload.SCHEMA,
+                )
+            }
+            METHOD_PUSH -> {
+                val incoming = readSnapshot(context, extras) ?: return@runBlocking bundleOf(ERROR to "NO_URI")
+                require(incoming.instanceId == app.instanceId) { "Instance mismatch" }
+                require(incoming.sourceId == app.sourceId && incoming.kind == app.kind) {
+                    "Scope mismatch"
+                }
+                val owners = store.loadOwners()
+                val merged = StandaloneSyncMerge.merge(store.load(app.instanceId), incoming, owners)
+                val filtered = merged.payload.filterFor(app, merged.owners)
+                StandaloneSnapshotApplier(
+                    sourceId = app.sourceId,
+                    kind = app.kind,
+                ).apply(filtered)
+                store.save(filtered)
+                store.saveOwners(SyncOwnerIndex(merged.owners))
+                bundleOf(KEY_ACCEPTED to true, KEY_REVISION to filtered.revision)
+            }
+            METHOD_PULL -> {
+                val snapshot = hostSnapshot(context, app, store)
+                val uri = writeSnapshot(context, caller, "standalone-sync-out.json", snapshot)
+                bundleOf(
+                    KEY_URI to uri.toString(),
+                    KEY_REVISION to snapshot.revision,
+                    KEY_SCHEMA to StandaloneSyncPayload.SCHEMA,
+                )
+            }
+            else -> bundleOf(ERROR to "UNKNOWN_METHOD")
+        }
+    }
+
+    /** ExtYomi's view of one instance: its own DB changes merged with the last known snapshot. */
+    internal suspend fun hostSnapshot(
+        context: Context,
+        app: GeneratedStandaloneApp,
+        store: StandaloneSyncStore,
+    ): StandaloneSyncPayload {
+        val stored = store.load(app.instanceId)
+        val owners = store.loadOwners().owners
+        val fresh = StandaloneSnapshotBuilder(
+            sourceId = app.sourceId,
+            kind = app.kind,
+            instanceId = app.instanceId,
+            extensionPkg = app.extensionPkg,
+            previous = stored,
+        ).build(hostDownloadsRootUri(context))
+        val merged = StandaloneSyncMerge.merge(stored, fresh, SyncOwnerIndex(owners))
+        val filtered = merged.payload.copy(
+            entries = merged.payload.entries.filter { entry ->
+                val key = SyncOwnerIndex.key(app.kind, app.sourceId, entry.url)
+                merged.owners[key] == null || merged.owners[key] == app.instanceId
+            },
+        )
+        store.save(filtered)
+        store.saveOwners(SyncOwnerIndex(merged.owners))
+        return filtered
+    }
+
+    private fun readSnapshot(context: Context, extras: Bundle?): StandaloneSyncPayload? {
+        val uri = extras?.getString(KEY_URI)?.let(Uri::parse) ?: return null
+        return context.contentResolver.openInputStream(uri)?.use {
+            it.readBytes().toString(Charsets.UTF_8).toStandaloneSyncPayload()
+        }
+    }
+
+    private fun writeSnapshot(
+        context: Context,
+        caller: String,
+        fileName: String,
+        snapshot: StandaloneSyncPayload,
+    ): Uri {
+        val file = File(context.cacheDir, fileName).apply { writeText(snapshot.toJson()) }
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+        grant(context, caller, uri)
+        return uri
     }
 
     private fun findApp(context: Context, caller: String, instanceId: String): GeneratedStandaloneApp? {
@@ -171,6 +246,8 @@ class StandaloneDataProvider : ContentProvider() {
         const val METHOD_HANDSHAKE = "handshake"
         const val METHOD_PUSH = "push"
         const val METHOD_PULL = "pull"
+        const val METHOD_PULL_LOCAL = "pullLocal"
+        const val METHOD_PUSH_LOCAL = "pushLocal"
 
         const val KEY_INSTANCE_ID = "instanceId"
         const val KEY_URI = "uri"

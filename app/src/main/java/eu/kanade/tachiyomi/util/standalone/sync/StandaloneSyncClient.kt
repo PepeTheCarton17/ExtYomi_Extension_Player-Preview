@@ -24,7 +24,9 @@ object StandaloneSyncClient {
             val uri = Uri.parse("content://$authority")
             val resolver = context.contentResolver
             val instanceId = StandaloneScope.instanceId
-            require(instanceId.isNotBlank()) { "This standalone has no sync id" }
+            require(instanceId.isNotBlank()) {
+                "Esta standalone no tiene ID de sincronización; vuelve a generarla desde ExtYomi"
+            }
 
             val handshake = resolver.call(
                 uri,
@@ -49,13 +51,16 @@ object StandaloneSyncClient {
                     Injekt.get<StoragePreferences>().baseStorageDirectory().set(root)
                 }
 
+            val store = StandaloneSyncStore(context)
             val snapshotFile = File(context.cacheDir, "standalone-sync-in.json")
             val snapshotUri = FileProvider.getUriForFile(
                 context,
                 "${context.packageName}.provider",
                 snapshotFile.apply {
                     writeText(
-                        StandaloneSnapshotBuilder().build().toJson(),
+                        StandaloneSnapshotBuilder(
+                            previous = store.load(instanceId),
+                        ).build().toJson(),
                     )
                 },
             )
@@ -91,6 +96,7 @@ object StandaloneSyncClient {
             check(merged.kind == StandaloneScope.kind) { "Wrong content kind" }
 
             StandaloneSnapshotApplier().apply(merged)
+            store.save(merged)
             snapshotFile.delete()
             "OK"
         }

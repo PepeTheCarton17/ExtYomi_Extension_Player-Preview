@@ -671,6 +671,8 @@
     <string name="action_sync_with_extyomi">Sync with ExtYomi</string>
     <string name="standalone_sync_success">Standalone sync completed</string>
     <string name="standalone_sync_failed">Standalone sync failed</string>
+    <string name="standalone_sync_error_detail">Standalone sync failed: %1$s</string>
+    <string name="pref_standalone_auto_sync">Automatic standalone sync</string>
 
       <!-- Advanced section -->
     <string name="label_network">Networking</string>

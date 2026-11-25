@@ -56,6 +56,27 @@ data class SyncChapter(
     val updatedAt: Long = 0L,
 )
 
+/** A tombstone means "this entry was removed from the other app's library/categories". */
+internal val SyncEntry.isTombstone: Boolean
+    get() = !favorite && categories.isEmpty() && chapters.isEmpty()
+
+/** Ignores the bookkeeping timestamps so a snapshot can tell real edits from no-op syncs. */
+internal fun SyncEntry.sameContentAs(other: SyncEntry): Boolean =
+    title == other.title &&
+        thumbnailUrl == other.thumbnailUrl &&
+        favorite == other.favorite &&
+        isNovel == other.isNovel &&
+        dateAdded == other.dateAdded &&
+        categories == other.categories &&
+        chapters.size == other.chapters.size &&
+        chapters.zip(other.chapters).all { (left, right) ->
+            left.url == right.url &&
+                left.seen == right.seen &&
+                left.bookmark == right.bookmark &&
+                left.position == right.position &&
+                left.readAt == right.readAt
+        }
+
 fun StandaloneSyncPayload.toJson(): String = standaloneSyncJson.encodeToString(this)
 
 fun String.toStandaloneSyncPayload(): StandaloneSyncPayload =

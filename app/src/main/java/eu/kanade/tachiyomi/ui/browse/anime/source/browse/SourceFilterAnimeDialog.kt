@@ -48,6 +48,7 @@ fun SourceFilterAnimeDialog(
     onReset: () -> Unit,
     onFilter: () -> Unit,
     onUpdate: (AnimeFilterList) -> Unit,
+    header: @Composable () -> Unit = {},
 ) {
     val updateFilters = { onUpdate(filters) }
     var query by remember { mutableStateOf("") }
@@ -80,6 +81,7 @@ fun SourceFilterAnimeDialog(
         LazyColumn {
             stickyHeader {
                 Column(modifier = Modifier.background(MaterialTheme.colorScheme.background)) {
+                    header()
                     Row(modifier = Modifier.padding(8.dp)) {
                         TextButton(onClick = onReset) {
                             Text(

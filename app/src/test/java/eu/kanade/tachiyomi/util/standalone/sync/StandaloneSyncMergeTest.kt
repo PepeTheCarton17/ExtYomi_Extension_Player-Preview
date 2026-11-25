@@ -106,6 +106,50 @@ class StandaloneSyncMergeTest {
         assertTrue(result.payload.entries.flatMap { it.categories }.isEmpty())
     }
 
+    @Test
+    fun `a newer tombstone removes the entry and its categories`() {
+        val existing = SyncEntry(
+            url = "/a",
+            title = "A",
+            favorite = true,
+            updatedAt = 100L,
+            categories = listOf("Shonen"),
+        )
+        val tombstone = SyncEntry(
+            url = "/a",
+            title = "A",
+            favorite = false,
+            categories = emptyList(),
+            updatedAt = 300L,
+        )
+
+        val result = StandaloneSyncMerge.merge(
+            current = payload("host", entries = listOf(existing)),
+            incoming = payload("host", entries = listOf(tombstone)),
+            ownerIndex = SyncOwnerIndex(),
+        )
+
+        val entry = result.payload.entries.single()
+        assertTrue(entry.isTombstone)
+        assertFalse(entry.favorite)
+        assertTrue(entry.categories.isEmpty())
+    }
+
+    @Test
+    fun `bookkeeping timestamps do not count as a real edit`() {
+        val original = SyncEntry(
+            url = "/a",
+            title = "A",
+            favorite = true,
+            updatedAt = 100L,
+            categories = listOf("Shonen"),
+        )
+
+        assertTrue(original.sameContentAs(original.copy(updatedAt = 999L)))
+        assertFalse(original.sameContentAs(original.copy(title = "Renamed", updatedAt = 200L)))
+        assertFalse(original.sameContentAs(original.copy(favorite = false, updatedAt = 200L)))
+    }
+
     private companion object {
         const val SOURCE_ID = 123L
     }

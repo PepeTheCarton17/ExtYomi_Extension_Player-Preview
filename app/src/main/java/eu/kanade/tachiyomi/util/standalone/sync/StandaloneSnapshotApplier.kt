@@ -54,6 +54,7 @@ class StandaloneSnapshotApplier(
     private suspend fun applyAnime(payload: StandaloneSyncPayload) {
         payload.entries.forEach { entry ->
             var anime = animeRepository.getAnimeByUrlAndSourceId(entry.url, sourceId)
+            if (anime == null && entry.isTombstone) return@forEach
             if (anime == null) {
                 val id = animeRepository.insertAnime(
                     Anime.create().copy(
@@ -68,6 +69,12 @@ class StandaloneSnapshotApplier(
                 anime = animeRepository.getAnimeById(id)
             }
             animeRepository.updateAnime(AnimeUpdate(id = anime.id, favorite = entry.favorite))
+            if (entry.isTombstone) {
+                // Leave episodes and history intact, but the entry leaves the library and its
+                // categories so a category disappears when its last entry is removed.
+                animeRepository.setAnimeCategories(anime.id, emptyList())
+                return@forEach
+            }
 
             val existing = episodeRepository.getEpisodeByAnimeId(anime.id)
             val byUrl = existing.associateBy { it.url.ifBlank { it.name } }
@@ -131,6 +138,7 @@ class StandaloneSnapshotApplier(
         val isNovel = kind == StandaloneScope.KIND_NOVEL
         payload.entries.forEach { entry ->
             var manga = mangaRepository.getMangaByUrlAndSourceId(entry.url, sourceId)
+            if (manga == null && entry.isTombstone) return@forEach
             if (manga == null) {
                 val id = mangaRepository.insertManga(
                     Manga.create().copy(
@@ -146,6 +154,15 @@ class StandaloneSnapshotApplier(
                 manga = mangaRepository.getMangaById(id)
             }
             mangaRepository.updateManga(MangaUpdate(id = manga.id, favorite = entry.favorite))
+            if (entry.isTombstone) {
+                val noCategories = emptyList<Long>()
+                if (isNovel) {
+                    novelCategoryRepository.setNovelCategories(manga.id, noCategories)
+                } else {
+                    mangaRepository.setMangaCategories(manga.id, noCategories)
+                }
+                return@forEach
+            }
 
             val existing = chapterRepository.getChapterByMangaId(manga.id)
             val byUrl = existing.associateBy { it.url.ifBlank { it.name } }
