@@ -55,6 +55,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import coil3.compose.AsyncImage
@@ -96,6 +97,7 @@ private fun StandaloneFeedScreenModel.FeedItem.matches(format: FeedFormat): Bool
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StandaloneHomeFeedScreen(
+    screen: Screen,
     screenModel: StandaloneFeedScreenModel,
     modifier: Modifier = Modifier,
     requestSettings: Boolean = false,
@@ -105,6 +107,7 @@ fun StandaloneHomeFeedScreen(
     // global, multi-source feed. It has its own filter icon and extension settings action.
     if (StandaloneScope.isActive) {
         StandaloneLocalHomeFeedScreen(
+            screen = screen,
             screenModel = screenModel,
             modifier = modifier,
             requestSettings = requestSettings,

@@ -46,6 +46,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import cafe.adriel.voyager.core.model.rememberScreenModel
+import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import coil3.compose.AsyncImage
@@ -99,6 +101,7 @@ private data class LocalFeedSection(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StandaloneLocalHomeFeedScreen(
+    screen: Screen,
     screenModel: StandaloneFeedScreenModel,
     modifier: Modifier = Modifier,
     requestSettings: Boolean = false,
@@ -571,6 +574,7 @@ private fun LocalSectionTitle(
  */
 @Composable
 private fun LocalFeedCatalogueGrid(
+    screen: Screen,
     sectionKey: String,
     feedModel: StandaloneFeedScreenModel,
 ) {
@@ -591,9 +595,7 @@ private fun LocalFeedCatalogueGrid(
     }
 
     if (isAnime) {
-        val model = cafe.adriel.voyager.core.model.rememberScreenModel(
-            "standalone-home-grid-$sectionKey",
-        ) {
+        val model = screen.rememberScreenModel("standalone-home-grid-$sectionKey") {
             BrowseAnimeSourceScreenModel(StandaloneScope.sourceId, listingQuery)
         }
         LaunchedEffect(sectionKey) {
@@ -627,9 +629,7 @@ private fun LocalFeedCatalogueGrid(
             )
         }
     } else {
-        val model = cafe.adriel.voyager.core.model.rememberScreenModel(
-            "standalone-home-grid-$sectionKey",
-        ) {
+        val model = screen.rememberScreenModel("standalone-home-grid-$sectionKey") {
             BrowseMangaSourceScreenModel(StandaloneScope.sourceId, listingQuery)
         }
         LaunchedEffect(sectionKey) {
@@ -682,7 +682,7 @@ private fun LocalFeedSectionContent(
         onToggle = onToggleView,
     )
     if (gridMode) {
-        LocalFeedCatalogueGrid(section.key, feedModel)
+        LocalFeedCatalogueGrid(screen, section.key, feedModel)
         return
     }
 
