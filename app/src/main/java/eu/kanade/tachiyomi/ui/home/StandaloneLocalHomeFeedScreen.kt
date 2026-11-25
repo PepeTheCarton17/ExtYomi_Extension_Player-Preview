@@ -263,6 +263,16 @@ fun StandaloneLocalHomeFeedScreen(
                 filterLabel,
                 filteredEntries.orEmpty(),
             )
+            val recommendedSection = section(
+                "recommended",
+                stringResource(MR.strings.standalone_feed_recommended),
+                state.recommended,
+            )
+            val allSection = section(
+                SECTION_ALL,
+                stringResource(MR.strings.standalone_feed_all),
+                state.allEntries,
+            )
 
             val nothingToShow = when (selectedTab) {
                 LocalHomeTab.ALL -> if (filteredEntries != null) {
@@ -365,11 +375,6 @@ fun StandaloneLocalHomeFeedScreen(
                                     }
                                 }
                             }
-                            val recommendedSection = section(
-                                "recommended",
-                                stringResource(MR.strings.standalone_feed_recommended),
-                                state.recommended,
-                            )
                             item {
                                 LocalFeedSectionContent(
                                     section = recommendedSection,
@@ -383,11 +388,6 @@ fun StandaloneLocalHomeFeedScreen(
                                     onLoadMore = { screenModel.loadMoreSection(recommendedSection.key) },
                                 )
                             }
-                            val allSection = section(
-                                SECTION_ALL,
-                                stringResource(MR.strings.standalone_feed_all),
-                                state.allEntries,
-                            )
                             val sections = state.categorySections.map {
                                 section(
                                     StandaloneFeedScreenModel.categoryKey(it.name),
@@ -686,7 +686,7 @@ private fun LocalFeedGrid(
         columns = GridCells.Fixed(columns),
         modifier = Modifier
             .fillMaxWidth()
-            .height(rows * 230.dp)
+            .height(230.dp * rows)
             .padding(horizontal = 12.dp),
         userScrollEnabled = false,
         horizontalArrangement = Arrangement.spacedBy(12.dp),

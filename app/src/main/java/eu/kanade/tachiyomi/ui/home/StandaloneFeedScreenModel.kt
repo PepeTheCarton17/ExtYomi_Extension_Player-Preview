@@ -444,8 +444,8 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
         suspend fun fetchFilter(name: String): Pair<List<FeedItem>, Boolean> =
             if (animeScope) searchAnimeWith(name) else searchMangaWith(name)
 
-        val trendingResult = trendingName?.let(::fetchFilter) ?: (emptyList<FeedItem>() to false)
-        val recentResult = recentName?.let(::fetchFilter) ?: (emptyList<FeedItem>() to false)
+        val trendingResult = trendingName?.let { fetchFilter(it) } ?: (emptyList<FeedItem>() to false)
+        val recentResult = recentName?.let { fetchFilter(it) } ?: (emptyList<FeedItem>() to false)
         val categories = buildList {
             categoryNames.forEach { name ->
                 val result = fetchFilter(name)
