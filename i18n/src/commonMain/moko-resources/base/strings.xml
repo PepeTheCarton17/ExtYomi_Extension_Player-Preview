@@ -48,6 +48,8 @@
     <string name="standalone_choose_folder">Choose folder</string>
     <string name="standalone_change_folder">Change folder</string>
     <string name="standalone_output_folder_value">Output: %1$s</string>
+    <string name="standalone_suggested_folder">Suggested folder: standalone/anime, standalone/manga or standalone/novelas depending on the kind</string>
+    <string name="standalone_use_suggested_folder">Use this folder</string>
     <string name="standalone_create_app">Create app</string>
     <string name="standalone_generating">Generating %1$s…</string>
     <string name="standalone_generated">App generated: %1$s</string>
@@ -665,6 +667,10 @@
     <!-- Sync section -->
     <string name="syncing_library">Syncing library</string>
     <string name="library_sync_complete">Library sync complete</string>
+    <string name="action_sync_standalones">Sync with standalones</string>
+    <string name="action_sync_with_extyomi">Sync with ExtYomi</string>
+    <string name="standalone_sync_success">Standalone sync completed</string>
+    <string name="standalone_sync_failed">Standalone sync failed</string>
 
       <!-- Advanced section -->
     <string name="label_network">Networking</string>

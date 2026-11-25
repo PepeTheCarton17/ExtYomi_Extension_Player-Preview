@@ -421,6 +421,13 @@
             android:foregroundServiceType="dataSync" />
 
         <provider
+            android:name=".util.standalone.sync.StandaloneDataProvider"
+            android:authorities="${applicationId}.standalonesync"
+            android:exported="true"
+            android:grantUriPermissions="false"
+            tools:ignore="ExportedContentProvider" />
+
+        <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.provider"
             android:exported="false"

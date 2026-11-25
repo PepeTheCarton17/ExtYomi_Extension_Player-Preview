@@ -1,6 +1,8 @@
 package eu.kanade.domain.ui
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import eu.kanade.domain.extension.anime.interactor.TrustAnimeExtension
 import eu.kanade.domain.extension.manga.interactor.TrustMangaExtension
 import org.json.JSONObject
@@ -39,6 +41,18 @@ object StandaloneScope {
     val extensionPkg: String
         get() = preferences.standaloneExtensionPkg().get()
 
+    /** Stable identity of this generated app, independent of sourceId and language. */
+    val instanceId: String
+        get() = preferences.standaloneInstanceId().get()
+
+    /** Authority of the ExtYomi data provider this app syncs with. */
+    val syncAuthority: String
+        get() = preferences.standaloneSyncAuthority().get()
+
+    /** SAF tree shared with ExtYomi for downloads. */
+    val downloadsRootUri: String
+        get() = preferences.standaloneDownloadsUri().get()
+
     val isActive: Boolean
         get() = sourceId >= 0 && kind.isNotEmpty()
 
@@ -60,6 +74,23 @@ object StandaloneScope {
 
         preferences.standaloneSourceId().set(sourceId)
         preferences.standaloneKind().set(kind)
+        preferences.standaloneInstanceId().set(config.optString("instanceId", ""))
+        preferences.standaloneSyncAuthority().set(config.optString("syncAuthority", ""))
+        val downloadsRootUri = config.optString("downloadsRootUri", "")
+        preferences.standaloneDownloadsUri().set(downloadsRootUri)
+        if (downloadsRootUri.isNotEmpty()) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    Uri.parse(downloadsRootUri),
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                )
+            }
+            runCatching {
+                Injekt.get<tachiyomi.domain.storage.service.StoragePreferences>()
+                    .baseStorageDirectory()
+                    .set(downloadsRootUri)
+            }
+        }
 
         // The standalone app has its own preferences, so pre-trust the extension it was built for.
         val extensionPkg = config.optString("extensionPkg", "")

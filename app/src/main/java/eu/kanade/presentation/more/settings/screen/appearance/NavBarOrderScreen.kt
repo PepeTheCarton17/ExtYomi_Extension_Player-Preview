@@ -119,7 +119,8 @@ class NavBarOrderScreen : Screen() {
                         key = { "tab-${it.prefKey}" },
                     ) { navTab ->
                         val isEnabled = navTab.prefKey in effectiveEnabled
-                        val isFixed = standaloneKind != null && NavTab.isFixedInStandalone(navTab)
+                        val isFixed = standaloneKind != null &&
+                            NavTab.isFixedInStandalone(navTab, standaloneKind.orEmpty())
                         ReorderableItem(reorderableState, key = "tab-${navTab.prefKey}") {
                             ElevatedCard(modifier = Modifier.animateItem()) {
                                 Row(

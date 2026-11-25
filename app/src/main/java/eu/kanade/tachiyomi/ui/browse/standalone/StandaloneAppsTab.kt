@@ -123,20 +123,6 @@ fun Screen.standaloneAppsTab(): TabContent {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // ExtYomi already has a storage root configured at install time, so just use its
-    // "standalone" subdirectory. The picker is only for changing that destination.
-    val defaultOutputUri = remember {
-        Injekt.get<StorageManager>()
-            .getStandaloneAppsDirectory()
-            ?.uri
-            ?.toString()
-            .orEmpty()
-    }
-    val outputUri = configuredOutputUri.ifBlank { defaultOutputUri }
-    val outputPath = remember(outputUri) {
-        UniFile.fromUri(context, outputUri.toUri())?.displayablePath.orEmpty()
-    }
-
     val folderPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree(),
     ) { uri: Uri? ->
@@ -159,6 +145,21 @@ fun Screen.standaloneAppsTab(): TabContent {
     )
     val selectedKindIndex = kindLabels.indexOfFirst { it.first == state.kind }.coerceAtLeast(0)
     val selectedKind = kindLabels[selectedKindIndex].first
+
+    // Suggestion only: standalone/<kind> inside the configured storage root. The user can accept
+    // it or pick any other folder with the SAF picker.
+    val suggestedOutputUri = remember(selectedKind) {
+        Injekt.get<StorageManager>()
+            .getStandaloneAppsDirectory(selectedKind)
+            ?.uri
+            ?.toString()
+            .orEmpty()
+    }
+    val outputUri = configuredOutputUri.ifBlank { suggestedOutputUri }
+    val outputPath = remember(outputUri) {
+        UniFile.fromUri(context, outputUri.toUri())?.displayablePath.orEmpty()
+    }
+
     // These labels are needed inside the non-composable LazyListScope builder below.
     val updatesHeader = stringResource(MR.strings.ext_updates_pending)
     val installedHeader = stringResource(MR.strings.ext_installed)
@@ -274,20 +275,32 @@ fun Screen.standaloneAppsTab(): TabContent {
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         Spacer(Modifier.height(12.dp))
+                        Text(
+                            text = stringResource(MR.strings.standalone_suggested_folder),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Spacer(Modifier.height(8.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            Button(
+                                enabled = suggestedOutputUri.isNotBlank(),
+                                onClick = { uiPreferences.standaloneOutputUri().set(suggestedOutputUri) },
+                            ) {
+                                Text(stringResource(MR.strings.standalone_use_suggested_folder))
+                            }
+                            Spacer(Modifier.width(8.dp))
                             Button(onClick = { folderPicker.launch(null) }) {
                                 Text(stringResource(MR.strings.standalone_change_folder))
                             }
-                            if (outputPath.isNotBlank()) {
-                                Spacer(Modifier.width(12.dp))
-                                Text(
-                                    text = stringResource(
-                                        MR.strings.standalone_output_folder_value,
-                                        outputPath,
-                                    ),
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                            }
+                        }
+                        if (outputPath.isNotBlank()) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                text = stringResource(
+                                    MR.strings.standalone_output_folder_value,
+                                    outputPath,
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
                         }
 
                         if (!installGranted) {

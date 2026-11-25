@@ -280,6 +280,8 @@
     <string name="standalone_choose_folder">Elegir carpeta</string>
     <string name="standalone_change_folder">Cambiar carpeta</string>
     <string name="standalone_output_folder_value">Salida: %1$s</string>
+    <string name="standalone_suggested_folder">Carpeta sugerida: standalone/anime, standalone/manga o standalone/novelas según el tipo</string>
+    <string name="standalone_use_suggested_folder">Usar esta ruta</string>
     <string name="standalone_create_app">Crear app</string>
     <string name="standalone_generating">Generando %1$s…</string>
     <string name="standalone_generated">App generada: %1$s</string>
@@ -791,6 +793,10 @@
     <string name="has_results">Con resultados</string>
     <string name="library_sync_complete">La biblioteca se ha sincronizado correctamente</string>
     <string name="syncing_library">Sincronizando la biblioteca</string>
+    <string name="action_sync_standalones">Sincronizar con standalones</string>
+    <string name="action_sync_with_extyomi">Sincronizar con ExtYomi</string>
+    <string name="standalone_sync_success">Sincronización completada</string>
+    <string name="standalone_sync_failed">No se pudo sincronizar</string>
     <string name="information_cloudflare_help">Toca aquí para solucionar problemas de acceso con Cloudflare</string>
     <string name="download_cache_invalidated">Se ha borrado el índice de descargas</string>
     <string name="track_activity_name">Iniciar sesión en el servicio</string>

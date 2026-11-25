@@ -105,10 +105,21 @@ enum class NavTab(
          */
         fun enabledInStandalone(enabled: Set<String>, kind: String): Set<String> {
             val allowed = allowedInStandalone(kind).map { it.prefKey }.toSet()
-            return (enabled intersect allowed) + Home.prefKey + Updates.prefKey
+            val library = when (kind) {
+                StandaloneScope.KIND_ANIME -> Anime.prefKey
+                StandaloneScope.KIND_MANGA -> Manga.prefKey
+                StandaloneScope.KIND_NOVEL -> Novel.prefKey
+                else -> null
+            }
+            return (enabled intersect allowed) + listOfNotNull(Home.prefKey, library, Updates.prefKey)
         }
 
-        /** Home and Updates cannot be removed from a standalone navigation bar. */
-        fun isFixedInStandalone(navTab: NavTab): Boolean = navTab == Home || navTab == Updates
+        /** Home, the app's own library and Updates cannot be removed from a standalone bar. */
+        fun isFixedInStandalone(navTab: NavTab, kind: String): Boolean = when (kind) {
+            StandaloneScope.KIND_ANIME -> navTab == Home || navTab == Anime || navTab == Updates
+            StandaloneScope.KIND_MANGA -> navTab == Home || navTab == Manga || navTab == Updates
+            StandaloneScope.KIND_NOVEL -> navTab == Home || navTab == Novel || navTab == Updates
+            else -> navTab == Home || navTab == Updates
+        }
     }
 }
