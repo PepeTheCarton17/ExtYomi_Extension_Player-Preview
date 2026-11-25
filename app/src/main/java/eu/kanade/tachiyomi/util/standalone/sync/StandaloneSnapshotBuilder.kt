@@ -56,7 +56,8 @@ class StandaloneSnapshotBuilder(
             )
             .distinctBy { it.url }
 
-        return anime.map { item ->
+        val result = mutableListOf<SyncEntry>()
+        for (item in anime) {
             val episodes = episodeRepository.getEpisodeByAnimeId(item.id)
             val history = animeHistoryRepository.getHistoryByAnimeId(item.id)
                 .associateBy { it.episodeId }
@@ -64,7 +65,7 @@ class StandaloneSnapshotBuilder(
             val categories = animeCategoryRepository.getCategoriesByAnimeId(item.id)
                 .filter { !it.isSystemCategory }
                 .map { it.name }
-            SyncEntry(
+            result += SyncEntry(
                 url = item.url,
                 title = item.title,
                 thumbnailUrl = item.thumbnailUrl,
@@ -83,7 +84,8 @@ class StandaloneSnapshotBuilder(
                     )
                 },
             )
-        }.toList()
+        }
+        return result
     }
 
     private suspend fun buildMangaEntries(now: Long): List<SyncEntry> {
@@ -100,7 +102,8 @@ class StandaloneSnapshotBuilder(
             )
             .distinctBy { it.url }
 
-        return manga.map { item ->
+        val result = mutableListOf<SyncEntry>()
+        for (item in manga) {
             val chapters = chapterRepository.getChapterByMangaId(item.id)
             val history = mangaHistoryRepository.getHistoryByMangaId(item.id)
                 .associateBy { it.chapterId }
@@ -114,7 +117,7 @@ class StandaloneSnapshotBuilder(
                 )
                 .filter { !it.isSystemCategory }
                 .map { it.name }
-            SyncEntry(
+            result += SyncEntry(
                 url = item.url,
                 title = item.title,
                 thumbnailUrl = item.thumbnailUrl,
@@ -134,6 +137,7 @@ class StandaloneSnapshotBuilder(
                     )
                 },
             )
-        }.toList()
+        }
+        return result
     }
 }

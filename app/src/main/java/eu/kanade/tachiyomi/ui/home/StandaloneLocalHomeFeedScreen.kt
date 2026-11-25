@@ -46,7 +46,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import coil3.compose.AsyncImage
@@ -374,6 +373,8 @@ fun StandaloneLocalHomeFeedScreen(
                                                 MR.strings.standalone_feed_continue_reading
                                             },
                                         ),
+                                        gridMode = false,
+                                        onToggle = {},
                                         showToggle = false,
                                     )
                                     LazyRow(
@@ -590,7 +591,9 @@ private fun LocalFeedCatalogueGrid(
     }
 
     if (isAnime) {
-        val model = rememberScreenModel("standalone-home-grid-$sectionKey") {
+        val model = cafe.adriel.voyager.core.model.rememberScreenModel(
+            "standalone-home-grid-$sectionKey",
+        ) {
             BrowseAnimeSourceScreenModel(StandaloneScope.sourceId, listingQuery)
         }
         LaunchedEffect(sectionKey) {
@@ -624,7 +627,9 @@ private fun LocalFeedCatalogueGrid(
             )
         }
     } else {
-        val model = rememberScreenModel("standalone-home-grid-$sectionKey") {
+        val model = cafe.adriel.voyager.core.model.rememberScreenModel(
+            "standalone-home-grid-$sectionKey",
+        ) {
             BrowseMangaSourceScreenModel(StandaloneScope.sourceId, listingQuery)
         }
         LaunchedEffect(sectionKey) {

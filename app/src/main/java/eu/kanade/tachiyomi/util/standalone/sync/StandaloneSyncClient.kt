@@ -55,7 +55,7 @@ object StandaloneSyncClient {
                 "${context.packageName}.provider",
                 snapshotFile.apply {
                     writeText(
-                        StandaloneSnapshotBuilder(downloadsRootUri = null).build().toJson(),
+                        StandaloneSnapshotBuilder().build().toJson(),
                     )
                 },
             )
