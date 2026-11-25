@@ -58,7 +58,7 @@ object StandaloneSyncMerge {
                 existing
             }
             val other = if (winner === entry) existing else entry
-            merged[entry.url] = winner.withChapterNamesFrom(other)
+            merged[entry.url] = winner.withMissingChapterMetadataFrom(other)
         }
 
         val payload = incoming.copy(

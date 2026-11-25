@@ -35,6 +35,12 @@ import uy.kohesive.injekt.api.get
  */
 val LocalBackPress: ProvidableCompositionLocal<(() -> Unit)?> = staticCompositionLocalOf { null }
 
+/**
+ * Back action for tabs opened from Más or a deep link: pops the stack when possible, otherwise
+ * returns to the tab the user came from instead of a hard-coded library/home destination.
+ */
+val LocalNavigateUp: ProvidableCompositionLocal<(() -> Unit)?> = staticCompositionLocalOf { null }
+
 private val uiPreferences: UiPreferences = Injekt.get()
 
 interface Tab : cafe.adriel.voyager.navigator.tab.Tab {

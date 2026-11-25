@@ -55,6 +55,8 @@ data class SyncChapter(
     val position: Long = 0L,
     /** Epoch millis of the last read/watch, 0 when there is no history row. */
     val readAt: Long = 0L,
+    /** Epoch millis of the release date; -1 when the source does not provide one. */
+    val dateUpload: Long = 0L,
     val updatedAt: Long = 0L,
 )
 
@@ -80,14 +82,29 @@ internal fun SyncChapter.repairedName(currentName: String, currentUrl: String): 
     }
 }
 
-/** Snapshots from older APKs have no chapter titles; never lose the ones already known. */
-internal fun SyncEntry.withChapterNamesFrom(other: SyncEntry?): SyncEntry {
-    if (other == null || chapters.none { it.name.isBlank() }) return this
-    val namesByKey = other.chapters.associate { it.itemKey to it.name }
+/**
+ * Older snapshots have neither chapter titles nor release dates. Keep the metadata we already
+ * know instead of replacing it with an empty value when that side wins the LWW merge.
+ */
+internal fun SyncEntry.withMissingChapterMetadataFrom(other: SyncEntry?): SyncEntry {
+    if (other == null) return this
+    val knownByKey = other.chapters.associateBy { it.itemKey }
+    val needsRepair = chapters.any { chapter ->
+        val known = knownByKey[chapter.itemKey]
+        (chapter.name.isBlank() && !known?.name.isNullOrBlank()) ||
+            (chapter.dateUpload <= 0L && (known?.dateUpload ?: 0L) > 0L)
+    }
+    if (!needsRepair) return this
     return copy(
         chapters = chapters.map { chapter ->
-            val name = if (chapter.name.isBlank()) namesByKey[chapter.itemKey] else null
-            if (name.isNullOrBlank()) chapter else chapter.copy(name = name)
+            val known = knownByKey[chapter.itemKey] ?: return@map chapter
+            val name = if (chapter.name.isBlank()) known.name else chapter.name
+            val dateUpload = if (chapter.dateUpload <= 0L && known.dateUpload > 0L) {
+                known.dateUpload
+            } else {
+                chapter.dateUpload
+            }
+            chapter.copy(name = name, dateUpload = dateUpload)
         },
     )
 }
@@ -107,7 +124,8 @@ internal fun SyncEntry.sameContentAs(other: SyncEntry): Boolean =
                 left.seen == right.seen &&
                 left.bookmark == right.bookmark &&
                 left.position == right.position &&
-                left.readAt == right.readAt
+                left.readAt == right.readAt &&
+                left.dateUpload == right.dateUpload
         }
 
 fun StandaloneSyncPayload.toJson(): String = standaloneSyncJson.encodeToString(this)

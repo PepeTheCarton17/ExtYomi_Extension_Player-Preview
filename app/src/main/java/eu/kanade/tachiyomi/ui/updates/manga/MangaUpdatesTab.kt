@@ -11,7 +11,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
@@ -20,13 +19,13 @@ import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.TabContent
 import eu.kanade.presentation.updates.UpdatesDeleteConfirmationDialog
 import eu.kanade.presentation.updates.manga.MangaUpdateScreen
+import eu.kanade.presentation.util.LocalNavigateUp
 import eu.kanade.tachiyomi.ui.entries.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.home.HomeScreen
 import eu.kanade.tachiyomi.ui.main.MainActivity
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.launch
 import mihon.feature.upcoming.manga.UpcomingMangaScreen
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.i18n.MR
@@ -46,18 +45,7 @@ fun Screen.mangaUpdatesTab(
     }
     val state by screenModel.state.collectAsState()
 
-    val scope = rememberCoroutineScope()
-    val navigateUp: (() -> Unit)? = if (fromMore) {
-        {
-            if (navigator.lastItem == HomeScreen) {
-                scope.launch { HomeScreen.openTab(HomeScreen.Tab.AnimeLib()) }
-            } else {
-                navigator.pop()
-            }
-        }
-    } else {
-        null
-    }
+    val navigateUp: (() -> Unit)? = if (fromMore) LocalNavigateUp.current else null
 
     return TabContent(
         titleRes = if (novelOnly) AYMR.strings.label_novel else AYMR.strings.label_updates,

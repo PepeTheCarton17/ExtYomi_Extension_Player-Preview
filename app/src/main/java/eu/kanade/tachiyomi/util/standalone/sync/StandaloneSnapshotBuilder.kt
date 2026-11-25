@@ -135,6 +135,7 @@ class StandaloneSnapshotBuilder(
                         bookmark = episode.bookmark,
                         position = episode.lastSecondSeen,
                         readAt = historyByUrl[key] ?: 0L,
+                        dateUpload = episode.dateUpload,
                         updatedAt = now,
                     )
                 },
@@ -192,6 +193,7 @@ class StandaloneSnapshotBuilder(
                         bookmark = chapter.bookmark,
                         position = chapter.lastPageRead,
                         readAt = historyByUrl[key] ?: 0L,
+                        dateUpload = chapter.dateUpload,
                         updatedAt = now,
                     )
                 },

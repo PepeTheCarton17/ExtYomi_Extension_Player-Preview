@@ -47,6 +47,7 @@ import eu.kanade.presentation.library.components.LibraryToolbar
 import eu.kanade.presentation.library.components.RenameFolderDialog
 import eu.kanade.presentation.library.components.SeriesGroupDialog
 import eu.kanade.presentation.more.onboarding.GETTING_STARTED_URL
+import eu.kanade.presentation.util.LocalNavigateUp
 import eu.kanade.presentation.util.Tab
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.library.anime.AnimeLibraryUpdateJob
@@ -165,17 +166,7 @@ data object AnimeLibraryTab : Tab {
         }
 
         val fromMore = NavTab.Anime.prefKey !in currentBottomNavTabs()
-        val navigateUp: (() -> Unit)? = if (fromMore) {
-            {
-                if (navigator.lastItem == HomeScreen) {
-                    scope.launch { HomeScreen.openTab(HomeScreen.Tab.AnimeLib()) }
-                } else {
-                    navigator.pop()
-                }
-            }
-        } else {
-            null
-        }
+        val navigateUp: (() -> Unit)? = if (fromMore) LocalNavigateUp.current else null
 
         val defaultTitle = stringResource(AYMR.strings.label_anime_library)
 
