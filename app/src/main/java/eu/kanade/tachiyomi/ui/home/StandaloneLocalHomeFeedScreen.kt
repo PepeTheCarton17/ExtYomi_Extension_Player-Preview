@@ -260,6 +260,7 @@ fun StandaloneLocalHomeFeedScreen(
             @Composable
             fun FeedSection(feedSection: LocalFeedSection) {
                 LocalFeedSectionContent(
+                    screen = screen,
                     section = feedSection,
                     itemsPerSection = state.itemsPerSection,
                     gridMode = feedSection.key in gridSections,
@@ -668,6 +669,7 @@ private fun LocalFeedCatalogueGrid(
 /** One Home section: a horizontal row, or the real catalogue grid when toggled in place. */
 @Composable
 private fun LocalFeedSectionContent(
+    screen: Screen,
     section: LocalFeedSection,
     itemsPerSection: Int,
     gridMode: Boolean,
