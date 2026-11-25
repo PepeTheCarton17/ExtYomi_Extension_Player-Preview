@@ -27,6 +27,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -74,8 +75,8 @@ private data class LocalFeedSection(
 
 /**
  * Home of a generated standalone. Everything shown here comes from its single extension; the
- * public API only decides which real entries are suggested. Search and filters reuse the normal
- * single-source catalogue screen instead of the multi-extension Explore experience.
+ * public API only decides which real entries are suggested. Search and filters run here against
+ * the bundled source instead of redirecting to the multi-extension Explore experience.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

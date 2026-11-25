@@ -166,6 +166,7 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
         if (matched) autoSelectedAnimeCategory = query
         // The catalogue does the same for a genre: it searches with the filter, not as plain text.
         val effectiveQuery = if (matched) "" else query
+        pendingSearchQuery = effectiveQuery
         screenModelScope.launchIO {
             mutableState.update {
                 it.copy(
@@ -189,6 +190,7 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
         val matched = applyMangaCategory(filters, query)
         if (matched) autoSelectedMangaCategory = query
         val effectiveQuery = if (matched) "" else query
+        pendingSearchQuery = effectiveQuery
         screenModelScope.launchIO {
             mutableState.update {
                 it.copy(

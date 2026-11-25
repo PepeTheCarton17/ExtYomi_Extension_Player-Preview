@@ -98,7 +98,7 @@ fun StandaloneHomeFeedScreen(
     onSettingsHandled: () -> Unit = {},
 ) {
     // A generated app has one bundled extension: its Home is catalogue-backed and never shows the
-    // global, multi-source feed (or its global feed settings).
+    // global, multi-source feed. It has its own filter icon and extension settings action.
     if (StandaloneScope.isActive) {
         StandaloneLocalHomeFeedScreen(
             screenModel = screenModel,
