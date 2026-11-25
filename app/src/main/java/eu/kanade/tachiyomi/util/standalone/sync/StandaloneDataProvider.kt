@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.core.content.FileProvider
 import eu.kanade.domain.ui.GeneratedStandaloneApp
+import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.domain.ui.UiPreferences
 import kotlinx.coroutines.runBlocking
 import tachiyomi.domain.storage.service.StoragePreferences
@@ -144,7 +145,7 @@ class StandaloneDataProvider : ContentProvider() {
             extensionPkg = app.extensionPkg,
             previous = stored,
         ).build(hostDownloadsRootUri(context))
-        val merged = StandaloneSyncMerge.merge(stored, fresh, owners)
+        val merged = StandaloneSyncMerge.merge(stored, fresh, SyncOwnerIndex(owners))
         val filtered = merged.payload.copy(
             entries = merged.payload.entries.filter { entry ->
                 val key = SyncOwnerIndex.key(app.kind, app.sourceId, entry.url)

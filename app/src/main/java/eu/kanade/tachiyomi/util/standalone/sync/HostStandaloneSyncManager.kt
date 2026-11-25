@@ -75,7 +75,7 @@ object HostStandaloneSyncManager {
             extensionPkg = app.extensionPkg,
             previous = stored,
         ).build(hostDownloadsRootUri())
-        val mergedResult = StandaloneSyncMerge.merge(remote, fresh, owners)
+        val mergedResult = StandaloneSyncMerge.merge(remote, fresh, SyncOwnerIndex(owners))
         val merged = mergedResult.payload.copy(
             entries = mergedResult.payload.entries.filter { entry ->
                 val key = SyncOwnerIndex.key(app.kind, app.sourceId, entry.url)
