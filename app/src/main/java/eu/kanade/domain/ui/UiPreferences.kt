@@ -65,6 +65,9 @@ class UiPreferences(
 
     fun standaloneDownloadsUri() = preferenceStore.getString("standalone_downloads_uri", "")
 
+    // Two-way sync runs by itself; Home > Filtrar can switch it off in either app.
+    fun standaloneAutoSync() = preferenceStore.getBoolean("standalone_auto_sync", true)
+
     // Which screen a generated standalone app opens on: its source feed or its library.
     fun standaloneHomeMode() = preferenceStore.getEnum("standalone_home_mode", StandaloneHomeMode.FEED)
 

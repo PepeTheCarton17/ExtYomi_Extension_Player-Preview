@@ -631,6 +631,7 @@ internal fun FeedSettingsDialog(
         title = { Text(stringResource(MR.strings.standalone_feed_settings)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                StandaloneSyncToggle()
                 SwitchRow(
                     label = stringResource(MR.strings.standalone_feed_show_featured),
                     checked = state.showFeatured,

@@ -29,6 +29,9 @@ class StorageManager(
         .shareIn(scope, SharingStarted.Lazily, 1)
 
     init {
+        // Create the suggested standalone folders on startup too: on a fresh install the storage
+        // preference is already set, so the `changes()` flow below never fires.
+        baseDir?.let(::createStandaloneDirectories)
         storagePreferences.baseStorageDirectory().changes()
             .drop(1)
             .distinctUntilChanged()
@@ -42,7 +45,7 @@ class StorageManager(
                     parent.createDirectory(DOWNLOADS_PATH).also {
                         DiskUtil.createNoMediaFile(it, context)
                     }
-                    parent.createDirectory(STANDALONE_APPS_PATH)
+                    createStandaloneDirectories(parent)
                     parent.createDirectory(MPV_CONFIG_PATH)?.let { mpvDir ->
                         mpvDir.createDirectory(FONTS_PATH)
                         mpvDir.createDirectory(SCRIPTS_PATH)
@@ -69,18 +72,28 @@ class StorageManager(
     }
 
     fun getStandaloneAppsDirectory(): UniFile? {
-        return baseDir?.createDirectory(STANDALONE_APPS_PATH)
+        return baseDir?.let { root ->
+            createStandaloneDirectories(root)
+            root.createDirectory(STANDALONE_APPS_PATH)
+        }
     }
 
     /** Suggested output folder for a standalone, by content kind. */
     fun getStandaloneAppsDirectory(kind: String): UniFile? {
         val child = when (kind) {
-            "anime" -> "anime"
-            "manga" -> "manga"
-            "novel" -> "novelas"
+            "anime" -> STANDALONE_ANIME_PATH
+            "manga" -> STANDALONE_MANGA_PATH
+            "novel" -> STANDALONE_NOVEL_PATH
             else -> return getStandaloneAppsDirectory()
         }
         return getStandaloneAppsDirectory()?.createDirectory(child)
+    }
+
+    private fun createStandaloneDirectories(parent: UniFile) {
+        val root = parent.createDirectory(STANDALONE_APPS_PATH) ?: return
+        root.createDirectory(STANDALONE_ANIME_PATH)
+        root.createDirectory(STANDALONE_MANGA_PATH)
+        root.createDirectory(STANDALONE_NOVEL_PATH)
     }
 
     fun getLocalMangaSourceDirectory(): UniFile? {
@@ -119,6 +132,9 @@ class StorageManager(
 private const val AUTOMATIC_BACKUPS_PATH = "autobackup"
 private const val DOWNLOADS_PATH = "downloads"
 private const val STANDALONE_APPS_PATH = "standalone"
+private const val STANDALONE_ANIME_PATH = "anime"
+private const val STANDALONE_MANGA_PATH = "manga"
+private const val STANDALONE_NOVEL_PATH = "novelas"
 private const val LOCAL_SOURCE_PATH = "local"
 private const val LOCAL_ANIMESOURCE_PATH = "localanime"
 private const val LOCAL_NOVELSOURCE_PATH = "localnovel"

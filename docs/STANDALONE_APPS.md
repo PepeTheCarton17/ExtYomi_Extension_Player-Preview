@@ -89,11 +89,20 @@ botón de sincronizar aparece en la barra de biblioteca tanto en ExtYomi como en
   de Binder. ExtYomi valida al llamador contra el registro de apps y ese `instanceId`, no contra
   la firma, porque las apps generadas se re-firman con una clave local.
 - Cada instantánea incluye entradas, favoritos, categorías por nombre, capítulos/episodios,
-  progreso e historial. El merge es LWW por `updatedAt`; los favoritos dados de baja actúan como
-  borrado lógico. Las categorías se derivan de las entradas supervivientes, así una categoría
-  desaparece de la standalone al quitar su última entrada de esa extensión.
+  progreso e historial. El merge es LWW por `updatedAt`; las entradas sin cambios conservan su
+  marca de tiempo para que un cambio real en cualquiera de las dos apps gane. Las bajas viajan
+  como tumbstones: quitan la entrada de la biblioteca y sus categorías, pero no borran el historial.
+  Las categorías se derivan de las entradas supervivientes, así una categoría desaparece al quitar
+  su última entrada de esa extensión.
+- La sincronización es **automática y bidireccional**: ExtYomi hace `pull` de la standalone, fusiona
+  con su propia base de datos, aplica el resultado y hace `push` de vuelta. La standalone también
+  puede iniciarla con el botón de la biblioteca. El interruptor **Sincronización automática con
+  standalone** está en el panel **Filtrar** del Home de ambas apps; cada foreground y cada minuto
+  se intenta una sincronización (con un debounce de 20 s).
 - Se sincroniza únicamente el ámbito de la app (un `sourceId` y un tipo). Nada de lo que pertenezca
-  a otra fuente se toca en ninguno de los dos sentidos.
+  a otra fuente se toca en ninguno de los dos sentidos. Las apps generadas con versiones anteriores
+  no tienen `instanceId` ni los métodos `pullLocal`/`pushLocal`: hay que regenerarlas desde ExtYomi
+  con esta versión para que la sincronización automática funcione en ambos sentidos.
 
 ## Descargas y carpetas sugeridas
 
@@ -106,8 +115,9 @@ configurado:
 - `standalone/manga`
 - `standalone/novelas`
 
-La sugerencia no es obligatoria: el diálogo ofrece **Usar esta ruta** y también permite elegir
-otra carpeta SAF.
+Estas cuatro carpetas se crean al iniciar ExtYomi y al cambiar el almacenamiento base, no solo
+cuando se abre la pestaña de generación. La sugerencia no es obligatoria: el diálogo ofrece
+**Usar esta ruta** y también permite elegir otra carpeta SAF.
 
 ## Seguridad y límites
 

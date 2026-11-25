@@ -469,6 +469,7 @@ fun StandaloneLocalHomeFeedScreen(
                         showFilterSheet = false
                     },
                     onUpdate = { animeFilters = it },
+                    header = { StandaloneSyncToggle() },
                 )
             }
         } else {
@@ -486,6 +487,7 @@ fun StandaloneLocalHomeFeedScreen(
                         showFilterSheet = false
                     },
                     onUpdate = { mangaFilters = it },
+                    header = { StandaloneSyncToggle() },
                 )
             }
         }

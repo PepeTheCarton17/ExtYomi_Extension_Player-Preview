@@ -45,6 +45,7 @@ import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.network.NetworkPreferences
 import eu.kanade.tachiyomi.ui.base.delegate.SecureActivityDelegate
 import eu.kanade.tachiyomi.ui.main.AppIconManager
+import eu.kanade.tachiyomi.util.standalone.sync.StandaloneAutoSync
 import eu.kanade.tachiyomi.util.system.DeviceUtil
 import eu.kanade.tachiyomi.util.system.GLUtil
 import eu.kanade.tachiyomi.util.system.WebViewUtil
@@ -52,8 +53,10 @@ import eu.kanade.tachiyomi.util.system.animatorDurationScale
 import eu.kanade.tachiyomi.util.system.cancelNotification
 import eu.kanade.tachiyomi.util.system.notify
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.runBlocking
 import logcat.AndroidLogcatLogger
 import logcat.LogPriority
@@ -133,6 +136,15 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
 
         val scope = ProcessLifecycleOwner.get().lifecycleScope
+
+        // Two-way sync with generated standalones runs on its own while the app is alive.
+        // The 60s cadence is cheap because StandaloneAutoSync debounces rapid foreground events.
+        scope.launchIO {
+            while (isActive) {
+                delay(60_000L)
+                StandaloneAutoSync.runIfEnabled(this@App)
+            }
+        }
 
         // Show notification to disable Incognito Mode when it's enabled
         basePreferences.incognitoMode().changes()
@@ -248,6 +260,9 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
 
     override fun onStart(owner: LifecycleOwner) {
         SecureActivityDelegate.onApplicationStart()
+        ProcessLifecycleOwner.get().lifecycleScope.launchIO {
+            StandaloneAutoSync.runIfEnabled(this@App)
+        }
     }
 
     override fun onStop(owner: LifecycleOwner) {
