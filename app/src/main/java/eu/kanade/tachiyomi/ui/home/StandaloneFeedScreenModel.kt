@@ -79,7 +79,12 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
 
     init {
         mutableState.update {
-            it.copy(itemsPerSection = uiPreferences.newHomeItemsPerSection().get().coerceIn(MIN_ITEMS_PER_SECTION, MAX_ITEMS_PER_SECTION))
+            it.copy(
+                itemsPerSection = uiPreferences.newHomeItemsPerSection().get().coerceIn(
+                    MIN_ITEMS_PER_SECTION,
+                    MAX_ITEMS_PER_SECTION,
+                ),
+            )
         }
         refresh()
     }
@@ -630,7 +635,14 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
                 }
                 key.startsWith(CATEGORY_PREFIX) -> {
                     val name = key.removePrefix(CATEGORY_PREFIX)
-                    if (isAnimeScope) searchAnimeWith(name, pagination.page + 1) else searchMangaWith(name, pagination.page + 1)
+                    if (isAnimeScope) {
+                        searchAnimeWith(name, pagination.page + 1)
+                    } else {
+                        searchMangaWith(
+                            name,
+                            pagination.page + 1,
+                        )
+                    }
                 }
                 key == SECTION_TRENDING -> {
                     val name = currentTrendingName
@@ -886,7 +898,14 @@ private fun isTrendingName(name: String): Boolean =
 
 /** Matches the "recent"/"latest"/"new" filters extensions expose for freshly added titles. */
 private fun isRecentName(name: String): Boolean = listOf(
-    "recent", "recient", "latest", "ultim", "últim", "nuev", "new", "estren",
+    "recent",
+    "recient",
+    "latest",
+    "ultim",
+    "últim",
+    "nuev",
+    "new",
+    "estren",
 ).any { name.contains(it, ignoreCase = true) }
 
 private fun AnimeCatalogueSource.safeFilterList(): AnimeFilterList = try {

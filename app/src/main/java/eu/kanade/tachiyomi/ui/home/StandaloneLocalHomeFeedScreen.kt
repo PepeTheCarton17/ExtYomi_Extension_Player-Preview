@@ -15,7 +15,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -73,6 +72,7 @@ import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.screens.LoadingScreen
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import androidx.compose.foundation.lazy.grid.items as gridItems
 
 private enum class LocalHomeTab { ALL, POPULAR, RECENT, TRENDING, FILTERS }
 
@@ -327,7 +327,8 @@ fun StandaloneLocalHomeFeedScreen(
                                     itemsPerSection = state.itemsPerSection,
                                     isGrid = gridSections[filteredSection.key] == true,
                                     onToggleGrid = {
-                                        gridSections[filteredSection.key] = !(gridSections[filteredSection.key] ?: false)
+                                        gridSections[filteredSection.key] =
+                                            !(gridSections[filteredSection.key] ?: false)
                                     },
                                     onClick = ::onFeedItemClick,
                                     onLoadMore = { screenModel.loadMoreSection(filteredSection.key) },
@@ -375,7 +376,8 @@ fun StandaloneLocalHomeFeedScreen(
                                     itemsPerSection = state.itemsPerSection,
                                     isGrid = gridSections[recommendedSection.key] == true,
                                     onToggleGrid = {
-                                        gridSections[recommendedSection.key] = !(gridSections[recommendedSection.key] ?: false)
+                                        gridSections[recommendedSection.key] =
+                                            !(gridSections[recommendedSection.key] ?: false)
                                     },
                                     onClick = ::onFeedItemClick,
                                     onLoadMore = { screenModel.loadMoreSection(recommendedSection.key) },
@@ -461,7 +463,8 @@ fun StandaloneLocalHomeFeedScreen(
                                     itemsPerSection = state.itemsPerSection,
                                     isGrid = gridSections[filteredSection.key] == true,
                                     onToggleGrid = {
-                                        gridSections[filteredSection.key] = !(gridSections[filteredSection.key] ?: false)
+                                        gridSections[filteredSection.key] =
+                                            !(gridSections[filteredSection.key] ?: false)
                                     },
                                     onClick = ::onFeedItemClick,
                                     onLoadMore = { screenModel.loadMoreSection(filteredSection.key) },
