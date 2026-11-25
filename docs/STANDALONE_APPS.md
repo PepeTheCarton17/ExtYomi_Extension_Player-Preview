@@ -91,9 +91,13 @@ botón de sincronizar aparece en la barra de biblioteca tanto en ExtYomi como en
 - Cada instantánea incluye entradas, favoritos, categorías por nombre, capítulos/episodios,
   progreso e historial. El merge es LWW por `updatedAt`; las entradas sin cambios conservan su
   marca de tiempo para que un cambio real en cualquiera de las dos apps gane. Las bajas viajan
-  como tumbstones: quitan la entrada de la biblioteca y sus categorías, pero no borran el historial.
+  como tombstones: quitan la entrada de la biblioteca y sus categorías, pero no borran el historial.
   Las categorías se derivan de las entradas supervivientes, así una categoría desaparece al quitar
   su última entrada de esa extensión.
+- Cada capítulo viaja con su título real. Los capítulos sin URL (archivos locales) se identifican
+  por su nombre, que es también la clave para encontrar su historial. Aplicar una instantánea nunca
+  borra fechas de visionado: solo añade las que trae. Los títulos `/media/...` que dejaron las
+  versiones anteriores se reparan en la primera sincronización con esta versión.
 - La sincronización es **automática y bidireccional**: ExtYomi hace `pull` de la standalone, fusiona
   con su propia base de datos, aplica el resultado y hace `push` de vuelta. La standalone también
   puede iniciarla con el botón de la biblioteca. El interruptor **Sincronización automática con

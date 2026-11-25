@@ -78,14 +78,14 @@ class StandaloneSnapshotApplier(
 
             val existing = episodeRepository.getEpisodeByAnimeId(anime.id)
             val byUrl = existing.associateBy { it.url.ifBlank { it.name } }
-            val missing = entry.chapters.filter { it.url !in byUrl }
+            val missing = entry.chapters.filter { it.itemKey !in byUrl }
             if (missing.isNotEmpty()) {
                 episodeRepository.addAllEpisodes(
                     missing.mapIndexed { index, chapter ->
                         Episode.create().copy(
                             animeId = anime.id,
                             url = chapter.url,
-                            name = chapter.url,
+                            name = chapter.name.ifBlank { chapter.url },
                             sourceOrder = index.toLong(),
                             seen = chapter.seen,
                             bookmark = chapter.bookmark,
@@ -97,11 +97,13 @@ class StandaloneSnapshotApplier(
             val nowExisting = episodeRepository.getEpisodeByAnimeId(anime.id)
             episodeRepository.updateAllEpisodes(
                 nowExisting.mapNotNull { episode ->
-                    val incoming = entry.chapters.firstOrNull {
-                        it.url == episode.url.ifBlank { episode.name }
-                    } ?: return@mapNotNull null
+                    val key = episode.url.ifBlank { episode.name }
+                    val incoming = entry.chapters.firstOrNull { it.itemKey == key }
+                        ?: return@mapNotNull null
                     EpisodeUpdate(
                         id = episode.id,
+                        // Older snapshots stored the path as the title; restore the real one.
+                        name = incoming.repairedName(episode.name, episode.url),
                         seen = incoming.seen,
                         bookmark = incoming.bookmark,
                         lastSecondSeen = incoming.position,
@@ -109,12 +111,11 @@ class StandaloneSnapshotApplier(
                 },
             )
 
-            animeHistoryRepository.resetHistoryByAnimeId(anime.id)
+            // History is additive: a snapshot that carries no timestamp must not wipe what this
+            // app already knows. Resetting it here is what turned hours into "N/D" after syncing.
             nowExisting.forEach { episode ->
-                val readAt = entry.chapters
-                    .firstOrNull { it.url == episode.url.ifBlank { episode.name } }
-                    ?.readAt
-                    ?: 0L
+                val key = episode.url.ifBlank { episode.name }
+                val readAt = entry.chapters.firstOrNull { it.itemKey == key }?.readAt ?: 0L
                 if (readAt > 0L) {
                     animeHistoryRepository.upsertAnimeHistory(
                         AnimeHistoryUpdate(episode.id, Date(readAt)),
@@ -166,14 +167,14 @@ class StandaloneSnapshotApplier(
 
             val existing = chapterRepository.getChapterByMangaId(manga.id)
             val byUrl = existing.associateBy { it.url.ifBlank { it.name } }
-            val missing = entry.chapters.filter { it.url !in byUrl }
+            val missing = entry.chapters.filter { it.itemKey !in byUrl }
             if (missing.isNotEmpty()) {
                 chapterRepository.addAllChapters(
                     missing.mapIndexed { index, chapter ->
                         Chapter.create().copy(
                             mangaId = manga.id,
                             url = chapter.url,
-                            name = chapter.url,
+                            name = chapter.name.ifBlank { chapter.url },
                             sourceOrder = index.toLong(),
                             read = chapter.seen,
                             bookmark = chapter.bookmark,
@@ -185,11 +186,13 @@ class StandaloneSnapshotApplier(
             val nowExisting = chapterRepository.getChapterByMangaId(manga.id)
             chapterRepository.updateAllChapters(
                 nowExisting.mapNotNull { chapter ->
-                    val incoming = entry.chapters.firstOrNull {
-                        it.url == chapter.url.ifBlank { chapter.name }
-                    } ?: return@mapNotNull null
+                    val key = chapter.url.ifBlank { chapter.name }
+                    val incoming = entry.chapters.firstOrNull { it.itemKey == key }
+                        ?: return@mapNotNull null
                     ChapterUpdate(
                         id = chapter.id,
+                        // Older snapshots stored the path as the title; restore the real one.
+                        name = incoming.repairedName(chapter.name, chapter.url),
                         read = incoming.seen,
                         bookmark = incoming.bookmark,
                         lastPageRead = incoming.position,
@@ -197,12 +200,10 @@ class StandaloneSnapshotApplier(
                 },
             )
 
-            mangaHistoryRepository.resetHistoryByMangaId(manga.id)
+            // History is additive, so a missing timestamp cannot erase a real read date.
             nowExisting.forEach { chapter ->
-                val readAt = entry.chapters
-                    .firstOrNull { it.url == chapter.url.ifBlank { chapter.name } }
-                    ?.readAt
-                    ?: 0L
+                val key = chapter.url.ifBlank { chapter.name }
+                val readAt = entry.chapters.firstOrNull { it.itemKey == key }?.readAt ?: 0L
                 if (readAt > 0L) {
                     mangaHistoryRepository.upsertMangaHistory(
                         MangaHistoryUpdate(chapter.id, Date(readAt), 0L),
