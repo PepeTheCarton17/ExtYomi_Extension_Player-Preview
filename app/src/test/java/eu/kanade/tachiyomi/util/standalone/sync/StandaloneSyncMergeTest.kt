@@ -150,6 +150,103 @@ class StandaloneSyncMergeTest {
         assertFalse(original.sameContentAs(original.copy(favorite = false, updatedAt = 200L)))
     }
 
+    @Test
+    fun `a chapter title change counts as a real edit`() {
+        val chapter = SyncChapter(
+            url = "/media/serie/24",
+            name = "Episodio 24",
+            readAt = 1000L,
+        )
+        val original = SyncEntry(
+            url = "/a",
+            title = "A",
+            favorite = true,
+            chapters = listOf(chapter),
+        )
+
+        assertTrue(original.sameContentAs(original.copy(updatedAt = 999L)))
+        assertFalse(
+            original.sameContentAs(
+                original.copy(chapters = listOf(chapter.copy(name = "/media/serie/24"))),
+            ),
+        )
+    }
+
+    @Test
+    fun `chapter identity falls back to name when the url is blank`() {
+        assertEquals("Episodio 24", SyncChapter(url = "", name = "Episodio 24").itemKey)
+        assertEquals("/media/serie/24", SyncChapter(url = "/media/serie/24").itemKey)
+    }
+
+    @Test
+    fun `only path titles left by an old sync are repaired`() {
+        val incoming = SyncChapter(url = "/media/serie/24", name = "Episodio 24")
+
+        assertEquals("Episodio 24", incoming.repairedName("/media/serie/24", "/media/serie/24"))
+        assertEquals("Episodio 24", incoming.repairedName("", "/media/serie/24"))
+        assertEquals(null, incoming.repairedName("Mi capítulo", "/media/serie/24"))
+        assertEquals(
+            null,
+            SyncChapter(url = "/media/serie/24")
+                .repairedName("/media/serie/24", "/media/serie/24"),
+        )
+    }
+
+    @Test
+    fun `chapter names survive serialization and old snapshots still decode`() {
+        val payload = payload(
+            "host",
+            entries = listOf(
+                SyncEntry(
+                    url = "/a",
+                    title = "A",
+                    favorite = true,
+                    chapters = listOf(SyncChapter(url = "/a/1", name = "Episodio 1", readAt = 123L)),
+                ),
+            ),
+        )
+
+        val roundTrip = payload.toJson().toStandaloneSyncPayload()
+        assertEquals(
+            "Episodio 1",
+            roundTrip.entries.single().chapters.single().name,
+        )
+        assertEquals(123L, roundTrip.entries.single().chapters.single().readAt)
+
+        val oldSnapshot = """
+            {"schema":1,"instanceId":"host","sourceId":123,"kind":"anime","entries":[
+            {"url":"/a","title":"A","favorite":true,"chapters":[{"url":"/a/1","readAt":123}]}]}
+        """.trimIndent().toStandaloneSyncPayload()
+        assertEquals("", oldSnapshot.entries.single().chapters.single().name)
+    }
+
+    @Test
+    fun `merge keeps chapter names from an older snapshot without titles`() {
+        val key = SyncOwnerIndex.key(StandaloneScope.KIND_ANIME, SOURCE_ID, "/a")
+        val named = SyncEntry(
+            url = "/a",
+            title = "A",
+            favorite = true,
+            updatedAt = 100L,
+            chapters = listOf(SyncChapter(url = "/a/1", name = "Episodio 1")),
+        )
+        val old = SyncEntry(
+            url = "/a",
+            title = "A",
+            favorite = true,
+            updatedAt = 300L,
+            chapters = listOf(SyncChapter(url = "/a/1")),
+        )
+
+        val result = StandaloneSyncMerge.merge(
+            current = payload("app-b", revision = 4L, entries = listOf(named)),
+            incoming = payload("app-b", revision = 5L, entries = listOf(old)),
+            ownerIndex = SyncOwnerIndex(mapOf(key to "app-b")),
+        )
+
+        assertEquals("Episodio 1", result.payload.entries.single().chapters.single().name)
+    }
+
     private companion object {
         const val SOURCE_ID = 123L
     }

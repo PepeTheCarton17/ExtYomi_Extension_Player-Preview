@@ -52,9 +52,13 @@ object StandaloneSyncMerge {
             if (owner != null && owner != incoming.instanceId) return@forEach
             owners[key] = incoming.instanceId
             val existing = merged[entry.url]
-            if (existing == null || entry.updatedAt >= existing.updatedAt) {
-                merged[entry.url] = entry
+            val winner = if (existing == null || entry.updatedAt >= existing.updatedAt) {
+                entry
+            } else {
+                existing
             }
+            val other = if (winner === entry) existing else entry
+            merged[entry.url] = winner.withChapterNamesFrom(other)
         }
 
         val payload = incoming.copy(

@@ -47,6 +47,7 @@ class StandaloneSnapshotBuilder(
                         val oldChapter = old.chapters.firstOrNull { it.url == chapter.url }
                         if (
                             oldChapter != null &&
+                            chapter.name == oldChapter.name &&
                             chapter.seen == oldChapter.seen &&
                             chapter.bookmark == oldChapter.bookmark &&
                             chapter.position == oldChapter.position &&
@@ -111,7 +112,9 @@ class StandaloneSnapshotBuilder(
             val episodes = episodeRepository.getEpisodeByAnimeId(item.id)
             val history = animeHistoryRepository.getHistoryByAnimeId(item.id)
                 .associateBy { it.episodeId }
-            val historyByUrl = episodes.associate { it.url to history[it.id]?.seenAt?.time }
+            val historyByUrl = episodes.associate {
+                it.url.ifBlank { it.name } to history[it.id]?.seenAt?.time
+            }
             val categories = animeCategoryRepository.getCategoriesByAnimeId(item.id)
                 .filter { !it.isSystemCategory }
                 .map { it.name }
@@ -124,12 +127,14 @@ class StandaloneSnapshotBuilder(
                 updatedAt = now,
                 categories = if (item.favorite) categories else emptyList(),
                 chapters = episodes.map { episode ->
+                    val key = episode.url.ifBlank { episode.name }
                     SyncChapter(
-                        url = episode.url.ifBlank { episode.name },
+                        url = key,
+                        name = episode.name,
                         seen = episode.seen,
                         bookmark = episode.bookmark,
                         position = episode.lastSecondSeen,
-                        readAt = historyByUrl[episode.url] ?: 0L,
+                        readAt = historyByUrl[key] ?: 0L,
                         updatedAt = now,
                     )
                 },
@@ -157,7 +162,9 @@ class StandaloneSnapshotBuilder(
             val chapters = chapterRepository.getChapterByMangaId(item.id)
             val history = mangaHistoryRepository.getHistoryByMangaId(item.id)
                 .associateBy { it.chapterId }
-            val historyByUrl = chapters.associate { it.url to history[it.id]?.readAt?.time }
+            val historyByUrl = chapters.associate {
+                it.url.ifBlank { it.name } to history[it.id]?.readAt?.time
+            }
             val categories = (
                 if (isNovel) {
                     novelCategoryRepository.getCategoriesByNovelId(item.id)
@@ -177,12 +184,14 @@ class StandaloneSnapshotBuilder(
                 updatedAt = now,
                 categories = if (item.favorite) categories else emptyList(),
                 chapters = chapters.map { chapter ->
+                    val key = chapter.url.ifBlank { chapter.name }
                     SyncChapter(
-                        url = chapter.url.ifBlank { chapter.name },
+                        url = key,
+                        name = chapter.name,
                         seen = chapter.read,
                         bookmark = chapter.bookmark,
                         position = chapter.lastPageRead,
-                        readAt = historyByUrl[chapter.url] ?: 0L,
+                        readAt = historyByUrl[key] ?: 0L,
                         updatedAt = now,
                     )
                 },

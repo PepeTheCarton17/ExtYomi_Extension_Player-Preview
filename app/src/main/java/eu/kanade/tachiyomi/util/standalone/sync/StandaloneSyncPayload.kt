@@ -48,6 +48,8 @@ data class SyncEntry(
 @Serializable
 data class SyncChapter(
     val url: String,
+    /** Display title. Without it a synced episode is shown as its raw `/media/...` path. */
+    val name: String = "",
     val seen: Boolean = false,
     val bookmark: Boolean = false,
     val position: Long = 0L,
@@ -60,6 +62,36 @@ data class SyncChapter(
 internal val SyncEntry.isTombstone: Boolean
     get() = !favorite && categories.isEmpty() && chapters.isEmpty()
 
+/**
+ * Episodes and chapters from local sources can have an empty URL; in that case their name is
+ * the stable identity. History must use the same key as the payload itself.
+ */
+internal val SyncChapter.itemKey: String
+    get() = url.ifBlank { name }
+
+/**
+ * Repairs a title that an older sync stored as the raw path/URL. Returns null when the current
+ * title looks genuine, so user-edited names are never overwritten.
+ */
+internal fun SyncChapter.repairedName(currentName: String, currentUrl: String): String? {
+    val incomingName = name.takeIf { it.isNotBlank() } ?: return null
+    return incomingName.takeIf {
+        currentName.isBlank() || currentName == currentUrl || currentName == url
+    }
+}
+
+/** Snapshots from older APKs have no chapter titles; never lose the ones already known. */
+internal fun SyncEntry.withChapterNamesFrom(other: SyncEntry?): SyncEntry {
+    if (other == null || chapters.none { it.name.isBlank() }) return this
+    val namesByKey = other.chapters.associate { it.itemKey to it.name }
+    return copy(
+        chapters = chapters.map { chapter ->
+            val name = if (chapter.name.isBlank()) namesByKey[chapter.itemKey] else null
+            if (name.isNullOrBlank()) chapter else chapter.copy(name = name)
+        },
+    )
+}
+
 /** Ignores the bookkeeping timestamps so a snapshot can tell real edits from no-op syncs. */
 internal fun SyncEntry.sameContentAs(other: SyncEntry): Boolean =
     title == other.title &&
@@ -71,6 +103,7 @@ internal fun SyncEntry.sameContentAs(other: SyncEntry): Boolean =
         chapters.size == other.chapters.size &&
         chapters.zip(other.chapters).all { (left, right) ->
             left.url == right.url &&
+                left.name == right.name &&
                 left.seen == right.seen &&
                 left.bookmark == right.bookmark &&
                 left.position == right.position &&
