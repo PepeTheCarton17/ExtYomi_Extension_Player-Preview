@@ -75,7 +75,6 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
     private var autoSelectedMangaCategory: String? = null
     private var pendingSearchQuery = ""
     private var currentTrendingName: String? = null
-    private var currentRecentName: String? = null
 
     init {
         mutableState.update {
@@ -113,7 +112,7 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
             val popularAnime = if (isAnimeScope) safeFeed(true, "POPULARITY_DESC") else emptyList()
             val popularManga = if (isMangaContent) safeFeed(false, "POPULARITY_DESC") else emptyList()
             val popular = (popularAnime + popularManga).map(::toGlobalFeedItem)
-            // "Recent" comes from the extensions' own recent/latest filters, not from history.
+            // "Recent" uses the same latest listing as the normal catalogue, not history.
             val recent = loadGlobalRecent()
 
             mutableState.update {
@@ -300,8 +299,8 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
     )
 
     /**
-     * Host: "Recent" is taken from each enabled extension's own recent/latest filter. History and
-     * library updates are deliberately not used here: this section is about new catalogue titles.
+     * Host: "Recent" uses each enabled extension's latest listing, the same source as the normal
+     * catalogue's Latest page. History and library updates are deliberately not used here.
      */
     private suspend fun loadGlobalRecent(): List<FeedItem> = withIOContext {
         val animeSources = if (isAnimeScope) animeSourceManager.getCatalogueSources() else emptyList()
@@ -309,13 +308,8 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
         coroutineScope {
             val animeRecent = async {
                 animeSources.take(MAX_RECENT_SOURCES).mapNotNull { source ->
-                    val name = animeRecentFilterName(source) ?: return@mapNotNull null
                     val page = runCatching {
-                        withTimeout(SEARCH_TIMEOUT) {
-                            val filters = source.safeFilterList()
-                            if (!applyAnimeNamedFilter(filters, name)) return@withTimeout null
-                            source.getSearchAnime(1, "", filters)
-                        }
+                        withTimeout(SEARCH_TIMEOUT) { source.getLatestUpdates(1) }
                     }.getOrNull() ?: return@mapNotNull null
                     page.animes.take(RECENT_PER_SOURCE).map { anime ->
                         FeedItem(
@@ -334,13 +328,8 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
             }
             val mangaRecent = async {
                 mangaSources.take(MAX_RECENT_SOURCES).mapNotNull { source ->
-                    val name = mangaRecentFilterName(source) ?: return@mapNotNull null
                     val page = runCatching {
-                        withTimeout(SEARCH_TIMEOUT) {
-                            val filters = source.safeFilterList()
-                            if (!applyMangaNamedFilter(filters, name)) return@withTimeout null
-                            source.getSearchManga(1, "", filters)
-                        }
+                        withTimeout(SEARCH_TIMEOUT) { source.getLatestUpdates(1) }
                     }.getOrNull() ?: return@mapNotNull null
                     page.mangas.take(RECENT_PER_SOURCE).map { manga ->
                         FeedItem(
@@ -419,33 +408,28 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
         // Every entry the source exposes through its popular listing, across all pages.
         val allEntries = if (animeScope) loadAllAnimeEntries() else loadAllMangaEntries()
 
-        val (trendingName, recentName, allCategoryNames) = if (animeScope) {
+        val (trendingName, allCategoryNames) = if (animeScope) {
             val source = animeSourceManager.get(sourceId) as? AnimeCatalogueSource
-            Triple(
-                source?.let(::animeTrendingFilterName),
-                source?.let(::animeRecentFilterName),
-                source?.let(::animeCategoryNames).orEmpty(),
-            )
+            val trendingName = source?.let(::animeTrendingFilterName)
+            trendingName to source?.let(::animeCategoryNames).orEmpty()
         } else {
             val source = mangaSourceManager.get(sourceId) as? CatalogueSource
-            Triple(
-                source?.let(::mangaTrendingFilterName),
-                source?.let(::mangaRecentFilterName),
-                source?.let(::mangaCategoryNames).orEmpty(),
-            )
+            val trendingName = source?.let(::mangaTrendingFilterName)
+            trendingName to source?.let(::mangaCategoryNames).orEmpty()
         }
         currentTrendingName = trendingName
-        currentRecentName = recentName
-        // Trending and recent are their own sections, not duplicated as genre categories.
+        // Trending and recents are their own sections, not duplicated as genre categories.
         val categoryNames = allCategoryNames.filterNot { name ->
-            name.equals(trendingName, ignoreCase = true) || name.equals(recentName, ignoreCase = true)
+            name.equals(trendingName, ignoreCase = true) || isRecentName(name)
         }
 
         suspend fun fetchFilter(name: String): Pair<List<FeedItem>, Boolean> =
             if (animeScope) searchAnimeWith(name) else searchMangaWith(name)
 
         val trendingResult = trendingName?.let { fetchFilter(it) } ?: (emptyList<FeedItem>() to false)
-        val recentResult = recentName?.let { fetchFilter(it) } ?: (emptyList<FeedItem>() to false)
+        // Recents and popular use the same listings as the normal catalogue.
+        val recentResult = if (animeScope) latestAnimePage(1) else latestMangaPage(1)
+        val popularResult = if (animeScope) popularAnimePage(1) else popularMangaPage(1)
         val categories = buildList {
             categoryNames.forEach { name ->
                 val result = fetchFilter(name)
@@ -473,8 +457,9 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
             if (recentResult.first.isNotEmpty()) {
                 put(SECTION_RECENT, FeedPagination(1, recentResult.second))
             }
-            // Popular is built from suggestions/all entries and has no further source page.
-            put(SECTION_POPULAR, FeedPagination())
+            if (popularResult.first.isNotEmpty()) {
+                put(SECTION_POPULAR, FeedPagination(1, popularResult.second))
+            }
             categories.forEach { put(categoryKey(it.name), FeedPagination(1)) }
         }
         mutableState.update {
@@ -482,7 +467,9 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
                 isLoading = false,
                 isRefreshing = false,
                 allEntries = allEntries,
-                popular = matchedPopular.ifEmpty { allEntries.take(POPULAR_FALLBACK_COUNT) },
+                popular = popularResult.first.ifEmpty {
+                    matchedPopular.ifEmpty { allEntries.take(POPULAR_FALLBACK_COUNT) }
+                },
                 recommended = matchedRecommended,
                 trending = finalTrending,
                 recent = recentResult.first,
@@ -496,43 +483,91 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
     }
 
     private suspend fun loadAllAnimeEntries(): List<FeedItem> = withIOContext {
-        val source = animeSourceManager.get(sourceId) as? AnimeCatalogueSource ?: return@withIOContext emptyList()
         buildList {
             var page = 1
             while (page <= MAX_CATALOGUE_PAGES) {
-                val result = runCatching {
-                    withTimeout(PAGE_TIMEOUT) { source.getPopularAnime(page) }
-                }.getOrNull() ?: break
-                result.animes.forEach { anime ->
-                    runCatching {
-                        val local = networkToLocalAnime.await(anime.toDomainAnime(sourceId))
-                        add(anime.toSourceFeedItem(local.id))
-                    }
-                }
-                if (!result.hasNextPage || result.animes.isEmpty()) break
+                val (items, hasNextPage) = popularAnimePage(page)
+                if (items.isEmpty()) break
+                addAll(items)
+                if (!hasNextPage) break
                 page++
             }
         }
     }
 
     private suspend fun loadAllMangaEntries(): List<FeedItem> = withIOContext {
-        val source = mangaSourceManager.get(sourceId) as? CatalogueSource ?: return@withIOContext emptyList()
         buildList {
             var page = 1
             while (page <= MAX_CATALOGUE_PAGES) {
-                val result = runCatching {
-                    withTimeout(PAGE_TIMEOUT) { source.getPopularManga(page) }
-                }.getOrNull() ?: break
-                result.mangas.forEach { manga ->
-                    runCatching {
-                        val local = networkToLocalManga.await(manga.toDomainManga(sourceId))
-                        add(manga.toSourceFeedItem(local.id))
-                    }
-                }
-                if (!result.hasNextPage || result.mangas.isEmpty()) break
+                val (items, hasNextPage) = popularMangaPage(page)
+                if (items.isEmpty()) break
+                addAll(items)
+                if (!hasNextPage) break
                 page++
             }
         }
+    }
+
+    /** Latest updates: the same listing the normal catalogue shows as "Recientes". */
+    private suspend fun latestAnimePage(page: Int): Pair<List<FeedItem>, Boolean> = withIOContext {
+        val source = animeSourceManager.get(sourceId) as? AnimeCatalogueSource
+            ?: return@withIOContext emptyList<FeedItem>() to false
+        runCatching {
+            withTimeout(PAGE_TIMEOUT) { source.getLatestUpdates(page) }
+        }.getOrNull()?.let { result ->
+            result.animes.mapNotNull { anime ->
+                runCatching {
+                    val local = networkToLocalAnime.await(anime.toDomainAnime(sourceId))
+                    anime.toSourceFeedItem(local.id)
+                }.getOrNull()
+            } to result.hasNextPage
+        } ?: (emptyList<FeedItem>() to false)
+    }
+
+    private suspend fun latestMangaPage(page: Int): Pair<List<FeedItem>, Boolean> = withIOContext {
+        val source = mangaSourceManager.get(sourceId) as? CatalogueSource
+            ?: return@withIOContext emptyList<FeedItem>() to false
+        runCatching {
+            withTimeout(PAGE_TIMEOUT) { source.getLatestUpdates(page) }
+        }.getOrNull()?.let { result ->
+            result.mangas.mapNotNull { manga ->
+                runCatching {
+                    val local = networkToLocalManga.await(manga.toDomainManga(sourceId))
+                    manga.toSourceFeedItem(local.id)
+                }.getOrNull()
+            } to result.hasNextPage
+        } ?: (emptyList<FeedItem>() to false)
+    }
+
+    /** Popular listing: the same listing the normal catalogue shows as "Populares". */
+    private suspend fun popularAnimePage(page: Int): Pair<List<FeedItem>, Boolean> = withIOContext {
+        val source = animeSourceManager.get(sourceId) as? AnimeCatalogueSource
+            ?: return@withIOContext emptyList<FeedItem>() to false
+        runCatching {
+            withTimeout(PAGE_TIMEOUT) { source.getPopularAnime(page) }
+        }.getOrNull()?.let { result ->
+            result.animes.mapNotNull { anime ->
+                runCatching {
+                    val local = networkToLocalAnime.await(anime.toDomainAnime(sourceId))
+                    anime.toSourceFeedItem(local.id)
+                }.getOrNull()
+            } to result.hasNextPage
+        } ?: (emptyList<FeedItem>() to false)
+    }
+
+    private suspend fun popularMangaPage(page: Int): Pair<List<FeedItem>, Boolean> = withIOContext {
+        val source = mangaSourceManager.get(sourceId) as? CatalogueSource
+            ?: return@withIOContext emptyList<FeedItem>() to false
+        runCatching {
+            withTimeout(PAGE_TIMEOUT) { source.getPopularManga(page) }
+        }.getOrNull()?.let { result ->
+            result.mangas.mapNotNull { manga ->
+                runCatching {
+                    val local = networkToLocalManga.await(manga.toDomainManga(sourceId))
+                    manga.toSourceFeedItem(local.id)
+                }.getOrNull()
+            } to result.hasNextPage
+        } ?: (emptyList<FeedItem>() to false)
     }
 
     private suspend fun searchAnimeWith(
@@ -654,15 +689,15 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
                         searchMangaWith(name, pagination.page + 1)
                     }
                 }
-                key == SECTION_RECENT -> {
-                    val name = currentRecentName
-                    if (name == null) {
-                        emptyList<FeedItem>() to false
-                    } else if (isAnimeScope) {
-                        searchAnimeWith(name, pagination.page + 1)
-                    } else {
-                        searchMangaWith(name, pagination.page + 1)
-                    }
+                key == SECTION_RECENT -> if (isAnimeScope) {
+                    latestAnimePage(pagination.page + 1)
+                } else {
+                    latestMangaPage(pagination.page + 1)
+                }
+                key == SECTION_POPULAR -> if (isAnimeScope) {
+                    popularAnimePage(pagination.page + 1)
+                } else {
+                    popularMangaPage(pagination.page + 1)
                 }
                 else -> emptyList<FeedItem>() to false
             }
@@ -779,7 +814,7 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
         val trending: List<FeedItem> = emptyList(),
         val recommended: List<FeedItem> = emptyList(),
         val popular: List<FeedItem> = emptyList(),
-        /** Entries returned by each extension's own recent/latest filter. */
+        /** Entries from the latest listing of the bundled extension (or each host extension). */
         val recent: List<FeedItem> = emptyList(),
         /** All entries exposed by the bundled extension. */
         val allEntries: List<FeedItem> = emptyList(),
@@ -932,28 +967,6 @@ private fun mangaTrendingFilterName(source: CatalogueSource): String? =
         isTrendingName(filter.name) && (filter is Filter.Sort || filter is Filter.Select<*>)
     }?.name
 
-private fun animeRecentFilterName(source: AnimeCatalogueSource): String? =
-    source.safeFilterList().firstNotNullOfOrNull { filter ->
-        when {
-            isRecentName(filter.name) -> filter.name
-            filter is AnimeFilter.Group<*> -> filter.state.firstNotNullOfOrNull { child ->
-                (child as? AnimeFilter<*>)?.name?.takeIf(::isRecentName)
-            }
-            else -> null
-        }
-    }
-
-private fun mangaRecentFilterName(source: CatalogueSource): String? =
-    source.safeFilterList().firstNotNullOfOrNull { filter ->
-        when {
-            isRecentName(filter.name) -> filter.name
-            filter is Filter.Group<*> -> filter.state.firstNotNullOfOrNull { child ->
-                (child as? Filter<*>)?.name?.takeIf(::isRecentName)
-            }
-            else -> null
-        }
-    }
-
 private fun applyAnimeNamedFilter(filters: AnimeFilterList, name: String): Boolean =
     applyAnimeCategory(filters, name) || applyAnimeTrending(filters, name)
 
@@ -969,14 +982,20 @@ private fun animeCategoryNames(source: AnimeCatalogueSource): List<String> = bui
                     if (name.isNotBlank() &&
                         child !is AnimeFilter.Header &&
                         child !is AnimeFilter.Separator &&
-                        !isTrendingName(name)
+                        !isTrendingName(name) &&
+                        !isRecentName(name)
                     ) {
                         add(name)
                     }
                 }
             }
             is AnimeFilter.TriState, is AnimeFilter.CheckBox -> {
-                if (filter.name.isNotBlank() && !isTrendingName(filter.name)) add(filter.name)
+                if (filter.name.isNotBlank() &&
+                    !isTrendingName(filter.name) &&
+                    !isRecentName(filter.name)
+                ) {
+                    add(filter.name)
+                }
             }
             else -> Unit
         }
@@ -992,14 +1011,20 @@ private fun mangaCategoryNames(source: CatalogueSource): List<String> = buildLis
                     if (name.isNotBlank() &&
                         child !is Filter.Header &&
                         child !is Filter.Separator &&
-                        !isTrendingName(name)
+                        !isTrendingName(name) &&
+                        !isRecentName(name)
                     ) {
                         add(name)
                     }
                 }
             }
             is Filter.TriState, is Filter.CheckBox -> {
-                if (filter.name.isNotBlank() && !isTrendingName(filter.name)) add(filter.name)
+                if (filter.name.isNotBlank() &&
+                    !isTrendingName(filter.name) &&
+                    !isRecentName(filter.name)
+                ) {
+                    add(filter.name)
+                }
             }
             else -> Unit
         }

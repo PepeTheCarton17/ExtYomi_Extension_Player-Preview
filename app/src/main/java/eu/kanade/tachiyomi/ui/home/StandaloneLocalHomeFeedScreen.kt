@@ -603,7 +603,7 @@ private fun LocalSectionTitle(
     Spacer(Modifier.height(8.dp))
 }
 
-/** One Home section: horizontal rows of `itemsPerSection`, or a cover grid when toggled. */
+/** One Home section: a single horizontal row, or a cover grid when toggled. */
 @Composable
 private fun LocalFeedSectionContent(
     section: LocalFeedSection,
@@ -613,30 +613,41 @@ private fun LocalFeedSectionContent(
     onClick: (StandaloneFeedScreenModel.FeedItem) -> Unit,
     onLoadMore: () -> Unit,
 ) {
+    val unique = remember(section.items) {
+        section.items.distinctBy { it.isAnime to (it.localId ?: it.id) }
+    }
+    val pageSize = itemsPerSection.coerceAtLeast(1)
+    var visibleCount by remember(section.key) { mutableStateOf(pageSize) }
+    LaunchedEffect(pageSize) {
+        if (visibleCount < pageSize) visibleCount = pageSize
+    }
+
     LocalSectionTitle(
         title = section.title,
         isGrid = isGrid,
         onToggle = onToggleGrid,
     )
-    if (section.items.isNotEmpty()) {
+    if (unique.isNotEmpty()) {
         if (isGrid) {
-            LocalFeedGrid(items = section.items, onClick = onClick)
+            LocalFeedGrid(items = unique, onClick = onClick)
         } else {
-            val unique = remember(section.items) {
-                section.items.distinctBy { it.isAnime to (it.localId ?: it.id) }
-            }
-            val chunks = unique.chunked(itemsPerSection.coerceAtLeast(1))
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                chunks.forEachIndexed { index, chunk ->
-                    LocalFeedRow(
-                        items = chunk,
-                        onClick = onClick,
-                        showLoadMore = index == chunks.lastIndex && section.hasNextPage,
-                        isLoadingMore = section.isLoadingMore,
-                        onLoadMore = onLoadMore,
-                    )
-                }
-            }
+            val visible = unique.take(visibleCount)
+            val hasCachedMore = visibleCount < unique.size
+            val canLoadMore = visible.isNotEmpty() && (hasCachedMore || section.hasNextPage)
+            LocalFeedRow(
+                items = visible,
+                onClick = onClick,
+                showLoadMore = canLoadMore,
+                isLoadingMore = section.isLoadingMore && !hasCachedMore,
+                loadMoreKey = "${section.key}-$visibleCount-${unique.size}-${section.hasNextPage}",
+                onLoadMore = {
+                    if (hasCachedMore) {
+                        visibleCount = (visibleCount + pageSize).coerceAtMost(unique.size)
+                    } else {
+                        onLoadMore()
+                    }
+                },
+            )
         }
     }
 }
@@ -647,6 +658,7 @@ private fun LocalFeedRow(
     onClick: (StandaloneFeedScreenModel.FeedItem) -> Unit,
     showLoadMore: Boolean = false,
     isLoadingMore: Boolean = false,
+    loadMoreKey: String = "load-more",
     onLoadMore: () -> Unit = {},
 ) {
     LazyRow(
@@ -657,7 +669,9 @@ private fun LocalFeedRow(
             LocalFeedCard(entry, Modifier.width(120.dp)) { onClick(entry) }
         }
         if (showLoadMore) {
-            item(key = "load-more") {
+            item(key = loadMoreKey) {
+                // Reaching the end of this row loads more into this same horizontal line.
+                LaunchedEffect(Unit) { onLoadMore() }
                 TextButton(onClick = onLoadMore, enabled = !isLoadingMore) {
                     Text(
                         stringResource(
