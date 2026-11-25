@@ -20,13 +20,18 @@ import eu.kanade.tachiyomi.BuildConfig
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.ui.browse.standalone.StandaloneExtensionItem
 import eu.kanade.tachiyomi.util.lang.Hash
+import eu.kanade.tachiyomi.util.standalone.sync.StandaloneDataProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import tachiyomi.domain.storage.service.StoragePreferences
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.security.cert.X509Certificate
 import java.util.Locale
+import java.util.UUID
 
 /**
  * Builds a standalone app from the installed ExtYomi APK.
@@ -38,6 +43,7 @@ import java.util.Locale
 object StandaloneAppGenerator {
 
     data class StandaloneAppResult(
+        val instanceId: String,
         val fileName: String,
         val outputDirUri: String,
         val apkUri: String,
@@ -50,6 +56,7 @@ object StandaloneAppGenerator {
         context: Context,
         item: StandaloneExtensionItem,
         outputDirUri: Uri,
+        instanceId: String? = null,
     ): StandaloneAppResult = withContext(Dispatchers.IO) {
         val workDir = File(context.cacheDir, "standalone-build").apply { mkdirs() }
         val unsignedApk = File(workDir, "unsigned.apk")
@@ -66,6 +73,10 @@ object StandaloneAppGenerator {
         val extensionVersionCode = PackageInfoCompat.getLongVersionCode(packageInfo)
         val signatureHash = extensionSignatureHash(packageInfo)
 
+        val syncInstanceId = instanceId?.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString()
+        val downloadsRootUri = runCatching {
+            Injekt.get<StoragePreferences>().baseStorageDirectory().get()
+        }.getOrDefault("")
         val config = JSONObject()
             .put("sourceId", item.sourceId)
             .put("kind", item.kind)
@@ -73,6 +84,9 @@ object StandaloneAppGenerator {
             .put("extensionVersionCode", extensionVersionCode)
             .put("extensionSignatureHash", signatureHash)
             .put("generatedBy", BuildConfig.APPLICATION_ID)
+            .put("instanceId", syncInstanceId)
+            .put("syncAuthority", StandaloneDataProvider.authority(BuildConfig.APPLICATION_ID))
+            .put("downloadsRootUri", downloadsRootUri)
 
         val minSdkVersion: Int
         val module = ApkModule.loadApkFile(hostApk)
@@ -159,6 +173,7 @@ object StandaloneAppGenerator {
         unsignedApk.delete()
         signedApk.delete()
         StandaloneAppResult(
+            instanceId = syncInstanceId,
             fileName = fileName,
             outputDirUri = outputDirUri.toString(),
             apkUri = outputFile.uri.toString(),

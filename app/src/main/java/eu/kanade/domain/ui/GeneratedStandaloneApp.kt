@@ -9,6 +9,8 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class GeneratedStandaloneApp(
     val packageName: String,
+    /** Stable per-app sync identity; two standalones of the same extension stay independent. */
+    val instanceId: String = "",
     val label: String,
     val sourceId: Long,
     val kind: String,

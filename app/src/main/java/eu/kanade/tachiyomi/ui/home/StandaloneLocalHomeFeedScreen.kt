@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.ui.home
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -16,7 +17,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Explore
+import androidx.compose.material.icons.automirrored.filled.ViewList
+import androidx.compose.material.icons.filled.ViewModule
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -26,6 +28,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -40,12 +43,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import cafe.adriel.voyager.core.model.rememberScreenModel
+import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import coil3.compose.AsyncImage
 import eu.kanade.domain.ui.StandaloneScope
+import eu.kanade.presentation.browse.anime.BrowseAnimeSourceContent
+import eu.kanade.presentation.browse.manga.BrowseSourceContent
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.presentation.components.SearchToolbar
@@ -54,14 +62,16 @@ import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.ui.browse.anime.extension.details.AnimeSourcePreferencesScreen
-import eu.kanade.tachiyomi.ui.browse.anime.source.browse.BrowseAnimeSourceScreen
+import eu.kanade.tachiyomi.ui.browse.anime.source.browse.BrowseAnimeSourceScreenModel
 import eu.kanade.tachiyomi.ui.browse.anime.source.browse.SourceFilterAnimeDialog
 import eu.kanade.tachiyomi.ui.browse.manga.extension.details.MangaSourcePreferencesScreen
-import eu.kanade.tachiyomi.ui.browse.manga.source.browse.BrowseMangaSourceScreen
+import eu.kanade.tachiyomi.ui.browse.manga.source.browse.BrowseMangaSourceScreenModel
 import eu.kanade.tachiyomi.ui.browse.manga.source.browse.SourceFilterMangaDialog
 import eu.kanade.tachiyomi.ui.entries.anime.AnimeScreen
 import eu.kanade.tachiyomi.ui.entries.manga.MangaScreen
 import kotlinx.collections.immutable.persistentListOf
+import mihon.presentation.core.util.collectAsLazyPagingItems
+import tachiyomi.domain.library.model.LibraryDisplayMode
 import tachiyomi.domain.source.anime.interactor.GetRemoteAnime
 import tachiyomi.domain.source.anime.service.AnimeSourceManager
 import tachiyomi.domain.source.manga.interactor.GetRemoteManga
@@ -91,6 +101,7 @@ private data class LocalFeedSection(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StandaloneLocalHomeFeedScreen(
+    screen: Screen,
     screenModel: StandaloneFeedScreenModel,
     modifier: Modifier = Modifier,
     requestSettings: Boolean = false,
@@ -100,6 +111,8 @@ fun StandaloneLocalHomeFeedScreen(
     val navigator = LocalNavigator.currentOrThrow
     val isAnime = StandaloneScope.appliesTo(StandaloneScope.KIND_ANIME)
     var selectedTab by remember { mutableStateOf(LocalHomeTab.ALL) }
+    // Sections toggled to the vertical catalogue grid, kept in place in this same Home.
+    var gridSections by remember { mutableStateOf(emptySet<String>()) }
     var showFilterSheet by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf<String?>(null) }
@@ -142,31 +155,13 @@ fun StandaloneLocalHomeFeedScreen(
         }
     }
 
-    // The view toggle opens the real catalogue screen: its adaptive columns, card size and
-    // vertical paging are exactly the ones used by "Feed (catálogo)".
-    fun openCatalogue(sectionKey: String) {
-        val listingQuery = when (sectionKey) {
-            StandaloneFeedScreenModel.SECTION_POPULAR -> if (isAnime) {
-                GetRemoteAnime.QUERY_POPULAR
-            } else {
-                GetRemoteManga.QUERY_POPULAR
-            }
-            StandaloneFeedScreenModel.SECTION_RECENT -> if (isAnime) {
-                GetRemoteAnime.QUERY_LATEST
-            } else {
-                GetRemoteManga.QUERY_LATEST
-            }
-            StandaloneFeedScreenModel.SECTION_TRENDING -> if (isAnime) {
-                GetRemoteAnime.QUERY_LATEST
-            } else {
-                GetRemoteManga.QUERY_LATEST
-            }
-            else -> null
-        }
-        if (isAnime) {
-            navigator.push(BrowseAnimeSourceScreen(StandaloneScope.sourceId, listingQuery))
+    // The toggle only changes how this section is shown: the vertical view is the real catalogue
+    // grid, with the same listing/filters as the horizontal rows, embedded in this same Home.
+    fun toggleSectionView(sectionKey: String) {
+        gridSections = if (sectionKey in gridSections) {
+            gridSections - sectionKey
         } else {
-            navigator.push(BrowseMangaSourceScreen(StandaloneScope.sourceId, listingQuery))
+            gridSections + sectionKey
         }
     }
 
@@ -259,6 +254,20 @@ fun StandaloneLocalHomeFeedScreen(
                     items = items,
                     hasNextPage = pagination.hasNextPage,
                     isLoadingMore = pagination.isLoadingMore,
+                )
+            }
+
+            @Composable
+            fun FeedSection(feedSection: LocalFeedSection) {
+                LocalFeedSectionContent(
+                    screen = screen,
+                    section = feedSection,
+                    itemsPerSection = state.itemsPerSection,
+                    gridMode = feedSection.key in gridSections,
+                    onToggleView = { toggleSectionView(feedSection.key) },
+                    feedModel = screenModel,
+                    onClick = ::onFeedItemClick,
+                    onLoadMore = { screenModel.loadMoreSection(feedSection.key) },
                 )
             }
 
@@ -355,13 +364,7 @@ fun StandaloneLocalHomeFeedScreen(
                                 }
                             }
                             item {
-                                LocalFeedSectionContent(
-                                    section = filteredSection,
-                                    itemsPerSection = state.itemsPerSection,
-                                    onOpenCatalogue = { openCatalogue(filteredSection.key) },
-                                    onClick = ::onFeedItemClick,
-                                    onLoadMore = { screenModel.loadMoreSection(filteredSection.key) },
-                                )
+                                FeedSection(filteredSection)
                             }
                         } else {
                             if (state.showContinue && state.continueList.isNotEmpty()) {
@@ -374,6 +377,8 @@ fun StandaloneLocalHomeFeedScreen(
                                                 MR.strings.standalone_feed_continue_reading
                                             },
                                         ),
+                                        gridMode = false,
+                                        onToggle = {},
                                         showToggle = false,
                                     )
                                     LazyRow(
@@ -393,13 +398,7 @@ fun StandaloneLocalHomeFeedScreen(
                                 }
                             }
                             item {
-                                LocalFeedSectionContent(
-                                    section = recommendedSection,
-                                    itemsPerSection = state.itemsPerSection,
-                                    onOpenCatalogue = { openCatalogue(recommendedSection.key) },
-                                    onClick = ::onFeedItemClick,
-                                    onLoadMore = { screenModel.loadMoreSection(recommendedSection.key) },
-                                )
+                                FeedSection(recommendedSection)
                             }
                             val sections = state.categorySections.map {
                                 section(
@@ -411,43 +410,19 @@ fun StandaloneLocalHomeFeedScreen(
                             sections.forEach { feedSection ->
                                 item(key = "local-section-${feedSection.key}") {
                                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-                                    LocalFeedSectionContent(
-                                        section = feedSection,
-                                        itemsPerSection = state.itemsPerSection,
-                                        onOpenCatalogue = { openCatalogue(feedSection.key) },
-                                        onClick = ::onFeedItemClick,
-                                        onLoadMore = { screenModel.loadMoreSection(feedSection.key) },
-                                    )
+                                    FeedSection(feedSection)
                                 }
                             }
                         }
                     }
                     LocalHomeTab.POPULAR -> item {
-                        LocalFeedSectionContent(
-                            section = popularSection,
-                            itemsPerSection = state.itemsPerSection,
-                            onOpenCatalogue = { openCatalogue(popularSection.key) },
-                            onClick = ::onFeedItemClick,
-                            onLoadMore = { screenModel.loadMoreSection(popularSection.key) },
-                        )
+                        FeedSection(popularSection)
                     }
                     LocalHomeTab.RECENT -> item {
-                        LocalFeedSectionContent(
-                            section = recentSection,
-                            itemsPerSection = state.itemsPerSection,
-                            onOpenCatalogue = { openCatalogue(recentSection.key) },
-                            onClick = ::onFeedItemClick,
-                            onLoadMore = { screenModel.loadMoreSection(recentSection.key) },
-                        )
+                        FeedSection(recentSection)
                     }
                     LocalHomeTab.TRENDING -> item {
-                        LocalFeedSectionContent(
-                            section = trendingSection,
-                            itemsPerSection = state.itemsPerSection,
-                            onOpenCatalogue = { openCatalogue(trendingSection.key) },
-                            onClick = ::onFeedItemClick,
-                            onLoadMore = { screenModel.loadMoreSection(trendingSection.key) },
-                        )
+                        FeedSection(trendingSection)
                     }
                     LocalHomeTab.FILTERS -> {
                         if (filteredEntries != null) {
@@ -459,13 +434,7 @@ fun StandaloneLocalHomeFeedScreen(
                                 }
                             }
                             item {
-                                LocalFeedSectionContent(
-                                    section = filteredSection,
-                                    itemsPerSection = state.itemsPerSection,
-                                    onOpenCatalogue = { openCatalogue(filteredSection.key) },
-                                    onClick = ::onFeedItemClick,
-                                    onLoadMore = { screenModel.loadMoreSection(filteredSection.key) },
-                                )
+                                FeedSection(filteredSection)
                             }
                         }
                     }
@@ -569,7 +538,8 @@ private fun FilterHeader(label: String, onClear: () -> Unit) {
 @Composable
 private fun LocalSectionTitle(
     title: String,
-    onOpenCatalogue: () -> Unit = {},
+    gridMode: Boolean,
+    onToggle: () -> Unit,
     showToggle: Boolean = true,
 ) {
     Row(
@@ -584,10 +554,14 @@ private fun LocalSectionTitle(
             modifier = Modifier.weight(1f),
         )
         if (showToggle) {
-            IconButton(onClick = onOpenCatalogue) {
+            IconButton(onClick = onToggle) {
                 Icon(
-                    imageVector = Icons.Outlined.Explore,
-                    contentDescription = stringResource(MR.strings.label_standalone_catalogue),
+                    imageVector = if (gridMode) {
+                        Icons.AutoMirrored.Filled.ViewList
+                    } else {
+                        Icons.Filled.ViewModule
+                    },
+                    contentDescription = stringResource(MR.strings.standalone_feed_toggle_view),
                 )
             }
         }
@@ -595,15 +569,125 @@ private fun LocalSectionTitle(
     Spacer(Modifier.height(8.dp))
 }
 
-/** One Home section: a single horizontal row. The view button opens the real catalogue. */
+/**
+ * The vertical view of a Home section. It is the real catalogue grid and screen model, embedded
+ * here with the listing/filters of the section that was being shown horizontally.
+ */
+@Composable
+private fun LocalFeedCatalogueGrid(
+    screen: Screen,
+    sectionKey: String,
+    feedModel: StandaloneFeedScreenModel,
+) {
+    val navigator = LocalNavigator.currentOrThrow
+    val isAnime = StandaloneScope.appliesTo(StandaloneScope.KIND_ANIME)
+    val listingQuery = when (sectionKey) {
+        StandaloneFeedScreenModel.SECTION_POPULAR -> if (isAnime) {
+            GetRemoteAnime.QUERY_POPULAR
+        } else {
+            GetRemoteManga.QUERY_POPULAR
+        }
+        StandaloneFeedScreenModel.SECTION_RECENT -> if (isAnime) {
+            GetRemoteAnime.QUERY_LATEST
+        } else {
+            GetRemoteManga.QUERY_LATEST
+        }
+        else -> null
+    }
+
+    if (isAnime) {
+        val model = screen.rememberScreenModel("standalone-home-grid-$sectionKey") {
+            BrowseAnimeSourceScreenModel(StandaloneScope.sourceId, listingQuery)
+        }
+        LaunchedEffect(sectionKey) {
+            when {
+                sectionKey.startsWith(StandaloneFeedScreenModel.CATEGORY_PREFIX) ->
+                    model.searchGenre(
+                        sectionKey.removePrefix(StandaloneFeedScreenModel.CATEGORY_PREFIX),
+                    )
+                sectionKey == StandaloneFeedScreenModel.SECTION_FILTERED -> model.search(
+                    feedModel.activeSearchQuery.takeIf { it.isNotBlank() },
+                    feedModel.activeAnimeFilters,
+                )
+                sectionKey == StandaloneFeedScreenModel.SECTION_TRENDING ->
+                    feedModel.activeTrendingName?.let(model::searchGenre)
+            }
+        }
+        val snackbar = remember { SnackbarHostState() }
+        Box(Modifier.fillMaxWidth().height(420.dp)) {
+            BrowseAnimeSourceContent(
+                source = model.source,
+                animeList = model.animePagerFlowFlow.collectAsLazyPagingItems(),
+                columns = model.getColumnsPreference(LocalConfiguration.current.orientation),
+                displayMode = LibraryDisplayMode.ComfortableGrid,
+                snackbarHostState = snackbar,
+                contentPadding = PaddingValues(horizontal = 8.dp),
+                onWebViewClick = {},
+                onHelpClick = {},
+                onLocalAnimeSourceHelpClick = {},
+                onAnimeClick = { navigator.push(AnimeScreen(it.id, true)) },
+                onAnimeLongClick = {},
+            )
+        }
+    } else {
+        val model = screen.rememberScreenModel("standalone-home-grid-$sectionKey") {
+            BrowseMangaSourceScreenModel(StandaloneScope.sourceId, listingQuery)
+        }
+        LaunchedEffect(sectionKey) {
+            when {
+                sectionKey.startsWith(StandaloneFeedScreenModel.CATEGORY_PREFIX) ->
+                    model.searchGenre(
+                        sectionKey.removePrefix(StandaloneFeedScreenModel.CATEGORY_PREFIX),
+                    )
+                sectionKey == StandaloneFeedScreenModel.SECTION_FILTERED -> model.search(
+                    feedModel.activeSearchQuery.takeIf { it.isNotBlank() },
+                    feedModel.activeMangaFilters,
+                )
+                sectionKey == StandaloneFeedScreenModel.SECTION_TRENDING ->
+                    feedModel.activeTrendingName?.let(model::searchGenre)
+            }
+        }
+        val snackbar = remember { SnackbarHostState() }
+        Box(Modifier.fillMaxWidth().height(420.dp)) {
+            BrowseSourceContent(
+                source = model.source,
+                mangaList = model.mangaPagerFlowFlow.collectAsLazyPagingItems(),
+                columns = model.getColumnsPreference(LocalConfiguration.current.orientation),
+                displayMode = LibraryDisplayMode.ComfortableGrid,
+                snackbarHostState = snackbar,
+                contentPadding = PaddingValues(horizontal = 8.dp),
+                onWebViewClick = {},
+                onHelpClick = {},
+                onLocalSourceHelpClick = {},
+                onMangaClick = { navigator.push(MangaScreen(it.id, true)) },
+                onMangaLongClick = {},
+            )
+        }
+    }
+}
+
+/** One Home section: a horizontal row, or the real catalogue grid when toggled in place. */
 @Composable
 private fun LocalFeedSectionContent(
+    screen: Screen,
     section: LocalFeedSection,
     itemsPerSection: Int,
-    onOpenCatalogue: () -> Unit,
+    gridMode: Boolean,
+    onToggleView: () -> Unit,
+    feedModel: StandaloneFeedScreenModel,
     onClick: (StandaloneFeedScreenModel.FeedItem) -> Unit,
     onLoadMore: () -> Unit,
 ) {
+    LocalSectionTitle(
+        title = section.title,
+        gridMode = gridMode,
+        onToggle = onToggleView,
+    )
+    if (gridMode) {
+        LocalFeedCatalogueGrid(screen, section.key, feedModel)
+        return
+    }
+
     val unique = remember(section.items) {
         section.items.distinctBy { it.isAnime to (it.localId ?: it.id) }
     }
@@ -613,10 +697,6 @@ private fun LocalFeedSectionContent(
         if (visibleCount < pageSize) visibleCount = pageSize
     }
 
-    LocalSectionTitle(
-        title = section.title,
-        onOpenCatalogue = onOpenCatalogue,
-    )
     if (unique.isNotEmpty()) {
         val visible = unique.take(visibleCount)
         val hasCachedMore = visibleCount < unique.size

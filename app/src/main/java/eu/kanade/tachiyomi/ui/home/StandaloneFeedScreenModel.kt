@@ -76,6 +76,12 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
     private var pendingSearchQuery = ""
     private var currentTrendingName: String? = null
 
+    /** Current Home filters, exposed so the in-place catalogue grid shows the same listing. */
+    val activeAnimeFilters: AnimeFilterList? get() = currentAnimeFilters
+    val activeMangaFilters: FilterList? get() = currentMangaFilters
+    val activeSearchQuery: String get() = pendingSearchQuery
+    val activeTrendingName: String? get() = currentTrendingName
+
     init {
         mutableState.update {
             it.copy(

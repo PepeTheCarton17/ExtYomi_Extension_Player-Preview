@@ -6,6 +6,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.FlipToBack
 import androidx.compose.material.icons.outlined.SelectAll
+import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -37,6 +38,7 @@ fun LibraryToolbar(
     onClickRefresh: () -> Unit,
     onClickGlobalUpdate: () -> Unit,
     onClickOpenRandomEntry: () -> Unit,
+    onClickSync: () -> Unit,
     searchQuery: String?,
     onSearchQueryChange: (String?) -> Unit,
     scrollBehavior: TopAppBarScrollBehavior?,
@@ -57,6 +59,7 @@ fun LibraryToolbar(
         onClickRefresh = onClickRefresh,
         onClickGlobalUpdate = onClickGlobalUpdate,
         onClickOpenRandomEntry = onClickOpenRandomEntry,
+        onClickSync = onClickSync,
         scrollBehavior = scrollBehavior,
         navigateUp = navigateUp,
     )
@@ -72,6 +75,7 @@ private fun LibraryRegularToolbar(
     onClickRefresh: () -> Unit,
     onClickGlobalUpdate: () -> Unit,
     onClickOpenRandomEntry: () -> Unit,
+    onClickSync: () -> Unit,
     scrollBehavior: TopAppBarScrollBehavior?,
     navigateUp: (() -> Unit)?,
 ) {
@@ -117,6 +121,17 @@ private fun LibraryRegularToolbar(
                     AppBar.OverflowAction(
                         title = stringResource(MR.strings.action_open_random_manga),
                         onClick = onClickOpenRandomEntry,
+                    ),
+                    AppBar.Action(
+                        title = stringResource(
+                            if (eu.kanade.domain.ui.StandaloneScope.isActive) {
+                                MR.strings.action_sync_with_extyomi
+                            } else {
+                                MR.strings.action_sync_standalones
+                            },
+                        ),
+                        icon = Icons.Outlined.Sync,
+                        onClick = onClickSync,
                     ),
                 ),
             )

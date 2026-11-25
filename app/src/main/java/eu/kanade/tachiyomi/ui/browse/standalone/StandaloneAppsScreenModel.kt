@@ -231,13 +231,22 @@ class StandaloneAppsScreenModel(
                     error = false,
                 )
             }
+            val existingInstanceId = uiPreferences.standaloneApps().get().firstOrNull {
+                it.sourceId == item.sourceId && it.kind == item.kind && it.extensionPkg == item.extensionPkg
+            }?.instanceId
             val result = runCatching {
-                StandaloneAppGenerator.generate(context, item, outputDirUri)
+                StandaloneAppGenerator.generate(
+                    context = context,
+                    item = item,
+                    outputDirUri = outputDirUri,
+                    instanceId = existingInstanceId,
+                )
             }
             result.fold(
                 onSuccess = { generated ->
                     val app = GeneratedStandaloneApp(
                         packageName = generated.packageName,
+                        instanceId = generated.instanceId,
                         label = item.name,
                         sourceId = item.sourceId,
                         kind = item.kind,
@@ -307,6 +316,7 @@ class StandaloneAppsScreenModel(
                         lang = "",
                     ),
                     outputDirUri = Uri.parse(app.outputUri),
+                    instanceId = app.instanceId,
                 )
             }
             result.fold(

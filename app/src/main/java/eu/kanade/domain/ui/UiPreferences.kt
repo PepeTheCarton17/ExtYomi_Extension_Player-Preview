@@ -59,6 +59,12 @@ class UiPreferences(
 
     fun standaloneExtensionPkg() = preferenceStore.getString("standalone_extension_pkg", "")
 
+    fun standaloneInstanceId() = preferenceStore.getString("standalone_instance_id", "")
+
+    fun standaloneSyncAuthority() = preferenceStore.getString("standalone_sync_authority", "")
+
+    fun standaloneDownloadsUri() = preferenceStore.getString("standalone_downloads_uri", "")
+
     // Which screen a generated standalone app opens on: its source feed or its library.
     fun standaloneHomeMode() = preferenceStore.getEnum("standalone_home_mode", StandaloneHomeMode.FEED)
 

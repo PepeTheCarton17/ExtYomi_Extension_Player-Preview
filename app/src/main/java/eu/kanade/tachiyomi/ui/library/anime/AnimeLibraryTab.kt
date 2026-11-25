@@ -33,6 +33,7 @@ import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.TabOptions
+import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.domain.ui.model.NavTab
 import eu.kanade.presentation.category.components.ChangeCategoryDialog
 import eu.kanade.presentation.components.AppBar
@@ -55,6 +56,8 @@ import eu.kanade.tachiyomi.ui.entries.anime.AnimeScreen
 import eu.kanade.tachiyomi.ui.home.HomeScreen
 import eu.kanade.tachiyomi.ui.main.MainActivity
 import eu.kanade.tachiyomi.ui.player.settings.PlayerPreferences
+import eu.kanade.tachiyomi.util.standalone.sync.HostStandaloneSyncManager
+import eu.kanade.tachiyomi.util.standalone.sync.StandaloneSyncClient
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.channels.Channel
@@ -132,6 +135,22 @@ data object AnimeLibraryTab : Tab {
                 snackbarHostState.showSnackbar(context.stringResource(msgRes))
             }
             started
+        }
+
+        val onClickSync: () -> Unit = {
+            scope.launchIO {
+                val result = if (StandaloneScope.isActive) {
+                    StandaloneSyncClient.syncNow(context.applicationContext)
+                } else {
+                    HostStandaloneSyncManager.syncAll(context.applicationContext)
+                }
+                val message = if (result.isSuccess) {
+                    MR.strings.standalone_sync_success
+                } else {
+                    MR.strings.standalone_sync_failed
+                }
+                snackbarHostState.showSnackbar(context.stringResource(message))
+            }
         }
 
         suspend fun openEpisode(episode: Episode) {
@@ -237,6 +256,7 @@ data object AnimeLibraryTab : Tab {
                             )
                         },
                         onClickGlobalUpdate = { onClickRefresh(null) },
+                        onClickSync = onClickSync,
                         onClickOpenRandomEntry = {
                             scope.launch {
                                 val randomItem = screenModel.getRandomAnimelibItemForCurrentCategory()

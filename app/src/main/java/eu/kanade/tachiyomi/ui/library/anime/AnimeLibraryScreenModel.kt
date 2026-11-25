@@ -557,10 +557,16 @@ class AnimeLibraryScreenModel(
                 LibraryGroupMode.BY_TRACK_STATUS -> groupByTrackStatus(libraryItems, trackMap)
                 LibraryGroupMode.NONE -> {
                     val byCategory = libraryItems.groupBy { it.libraryAnime.category }
-                    val displayCategories = if (byCategory.isNotEmpty() && !byCategory.containsKey(0)) {
-                        categories.fastFilterNot { it.isSystemCategory }
+                    // A standalone only shows categories that still contain one of its own entries.
+                    val populatedCategories = if (standaloneSourceId >= 0) {
+                        categories.filter { byCategory.containsKey(it.id) }
                     } else {
                         categories
+                    }
+                    val displayCategories = if (byCategory.isNotEmpty() && !byCategory.containsKey(0)) {
+                        populatedCategories.fastFilterNot { it.isSystemCategory }
+                    } else {
+                        populatedCategories
                     }
                     displayCategories.associateWith { byCategory[it.id].orEmpty() }
                 }

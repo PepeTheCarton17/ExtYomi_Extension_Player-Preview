@@ -66,17 +66,13 @@ data object MoreTab : Tab {
         val navigator = LocalNavigator.currentOrThrow
         val screenModel = rememberScreenModel { MoreScreenModel() }
         val downloadQueueState by screenModel.downloadQueueState.collectAsState()
+        val allowedStandaloneTabs = StandaloneScope.kind.takeIf { StandaloneScope.isActive }
+            ?.let(NavTab::allowedInStandalone)
+            ?.map { it.prefKey }
+            ?.toSet()
         val hiddenNavTabs = NavTab.hidden(currentBottomNavTabs()).filter { navTab ->
-            // A standalone app must not expose navigation into the other content kind.
-            when {
-                StandaloneScope.appliesTo(StandaloneScope.KIND_ANIME) ->
-                    navTab != NavTab.Manga && navTab != NavTab.Novel
-                StandaloneScope.appliesTo(StandaloneScope.KIND_MANGA) ->
-                    navTab != NavTab.Anime && navTab != NavTab.Novel
-                StandaloneScope.appliesTo(StandaloneScope.KIND_NOVEL) ->
-                    navTab != NavTab.Anime && navTab != NavTab.Manga
-                else -> true
-            }
+            // A standalone only exposes navigation that belongs to its own content kind.
+            allowedStandaloneTabs?.contains(navTab.prefKey) ?: true
         }
         MoreScreen(
             downloadQueueStateProvider = { downloadQueueState },

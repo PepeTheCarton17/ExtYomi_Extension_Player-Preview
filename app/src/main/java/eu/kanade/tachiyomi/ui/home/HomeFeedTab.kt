@@ -37,6 +37,7 @@ data object HomeFeedTab : Tab {
     override fun Content() {
         val screenModel = rememberScreenModel("home-feed") { StandaloneFeedScreenModel() }
         StandaloneHomeFeedScreen(
+            screen = this,
             screenModel = screenModel,
             requestSettings = feedSettingsRequested.value,
             onSettingsHandled = { feedSettingsRequested.value = false },

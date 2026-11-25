@@ -132,7 +132,9 @@ class MangaLibraryScreenModel(
     private val seriesCoverCache = SeriesCoverCache(context, libraryPreferences)
 
     // In a standalone app, show only entries from its extension.
-    private val standaloneSourceId = StandaloneScope.sourceIdFor(StandaloneScope.KIND_MANGA)
+    private val standaloneSourceId = StandaloneScope.sourceIdFor(
+        if (novelOnly) StandaloneScope.KIND_NOVEL else StandaloneScope.KIND_MANGA,
+    )
 
     // Per-media-type library preferences: novels keep their own so tweaking one library doesn't
     // change the other. Each returns the novel-only pref when [novelOnly], else the manga one.
@@ -593,10 +595,16 @@ class MangaLibraryScreenModel(
                 LibraryGroupMode.BY_TRACK_STATUS -> groupByTrackStatus(libraryItems, trackMap)
                 LibraryGroupMode.NONE -> {
                     val byCategory = libraryItems.groupBy { it.libraryManga.category }
-                    val displayCategories = if (byCategory.isNotEmpty() && !byCategory.containsKey(0)) {
-                        categories.fastFilterNot { it.isSystemCategory }
+                    // A standalone only shows categories that still contain one of its own entries.
+                    val populatedCategories = if (standaloneSourceId >= 0) {
+                        categories.filter { byCategory.containsKey(it.id) }
                     } else {
                         categories
+                    }
+                    val displayCategories = if (byCategory.isNotEmpty() && !byCategory.containsKey(0)) {
+                        populatedCategories.fastFilterNot { it.isSystemCategory }
+                    } else {
+                        populatedCategories
                     }
                     displayCategories.associateWith { byCategory[it.id].orEmpty() }
                 }

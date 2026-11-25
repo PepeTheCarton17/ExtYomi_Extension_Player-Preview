@@ -391,32 +391,46 @@ object HomeScreen : Screen() {
                 launch {
                     openTabEvent.receiveAsFlow().collectLatest {
                         tabNavigator.current = when (it) {
-                            is Tab.Home -> if (StandaloneScope.isActive) {
-                                StandaloneFeedTab
-                            } else {
-                                HomeFeedTab
+                            is Tab.Home -> standaloneFeedTab
+                            is Tab.AnimeLib -> {
+                                if (StandaloneScope.isActive) standaloneLibraryTab else AnimeLibraryTab
                             }
-                            is Tab.AnimeLib -> AnimeLibraryTab
-                            is Tab.Library -> MangaLibraryTab
+                            is Tab.Library -> {
+                                if (StandaloneScope.isActive) standaloneLibraryTab else MangaLibraryTab
+                            }
                             is Tab.Updates -> UpdatesTab
                             is Tab.History -> HistoriesTab
                             is Tab.Browse -> {
-                                if (it.toExtensions) {
-                                    if (!it.anime) {
-                                        BrowseTab.showExtension()
-                                    } else {
-                                        BrowseTab.showAnimeExtension()
+                                if (StandaloneScope.isActive) {
+                                    standaloneFeedTab
+                                } else {
+                                    if (it.toExtensions) {
+                                        if (!it.anime) {
+                                            BrowseTab.showExtension()
+                                        } else {
+                                            BrowseTab.showAnimeExtension()
+                                        }
                                     }
+                                    BrowseTab
                                 }
-                                BrowseTab
                             }
                             is Tab.More -> MoreTab
                         }
 
-                        if (it is Tab.AnimeLib && it.animeIdToOpen != null) {
+                        if (it is Tab.AnimeLib &&
+                            it.animeIdToOpen != null &&
+                            (!StandaloneScope.isActive || StandaloneScope.appliesTo(StandaloneScope.KIND_ANIME))
+                        ) {
                             navigator.push(AnimeScreen(it.animeIdToOpen))
                         }
-                        if (it is Tab.Library && it.mangaIdToOpen != null) {
+                        if (it is Tab.Library &&
+                            it.mangaIdToOpen != null &&
+                            (
+                                !StandaloneScope.isActive ||
+                                    StandaloneScope.appliesTo(StandaloneScope.KIND_MANGA) ||
+                                    StandaloneScope.appliesTo(StandaloneScope.KIND_NOVEL)
+                                )
+                        ) {
                             navigator.push(MangaScreen(it.mangaIdToOpen))
                         }
                         if (it is Tab.More && it.toDownloads) {

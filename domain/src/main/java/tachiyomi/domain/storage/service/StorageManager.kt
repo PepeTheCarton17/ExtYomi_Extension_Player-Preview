@@ -72,6 +72,17 @@ class StorageManager(
         return baseDir?.createDirectory(STANDALONE_APPS_PATH)
     }
 
+    /** Suggested output folder for a standalone, by content kind. */
+    fun getStandaloneAppsDirectory(kind: String): UniFile? {
+        val child = when (kind) {
+            "anime" -> "anime"
+            "manga" -> "manga"
+            "novel" -> "novelas"
+            else -> return getStandaloneAppsDirectory()
+        }
+        return getStandaloneAppsDirectory()?.createDirectory(child)
+    }
+
     fun getLocalMangaSourceDirectory(): UniFile? {
         return baseDir?.createDirectory(LOCAL_SOURCE_PATH)
     }

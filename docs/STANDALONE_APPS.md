@@ -68,6 +68,47 @@ se ha tocado.
 La app generada usa el sistema de extensiones de Nekoyomi tal cual, pero queda reducida a una sola
 fuente. La extensión debe seguir instalada en el dispositivo.
 
+## Inicio: filas o catálogo vertical
+
+Cada sección del Home standalone tiene su propio conmutador en la cabecera. La fila horizontal
+sigue usando el mismo listing `latest` que el catálogo de la extensión y carga más al llegar al
+final; al cambiar a vertical, esa misma sección pasa a un grid paginado construido con
+`BrowseAnimeSourceContent` / `BrowseSourceContent` y el filtro de la sección. Tableta muestra unas
+9 entradas por línea y el móvil unas 2. El cambio ocurre en el mismo Home, sin abrir otra pantalla.
+
+## Biblioteca, categorías y sincronización
+
+La biblioteca está disponible siempre en la barra de una standalone y no se puede ocultar; el
+botón de sincronizar aparece en la barra de biblioteca tanto en ExtYomi como en cada app generada.
+
+- ExtYomi sincroniza con todas las apps registradas; una standalone sincroniza solo con su host.
+- Cada app tiene un `instanceId` estable. Dos standalones de la misma extensión —incluso en otro
+  idioma— son independientes: las entradas se separan por `kind:sourceId:url` en un índice de
+  propietario y una app nunca ve ni sobrescribe las de otra.
+- El intercambio usa `ContentProvider.call()` y archivos `content://` para no superar el límite
+  de Binder. ExtYomi valida al llamador contra el registro de apps y ese `instanceId`, no contra
+  la firma, porque las apps generadas se re-firman con una clave local.
+- Cada instantánea incluye entradas, favoritos, categorías por nombre, capítulos/episodios,
+  progreso e historial. El merge es LWW por `updatedAt`; los favoritos dados de baja actúan como
+  borrado lógico. Las categorías se derivan de las entradas supervivientes, así una categoría
+  desaparece de la standalone al quitar su última entrada de esa extensión.
+- Se sincroniza únicamente el ámbito de la app (un `sourceId` y un tipo). Nada de lo que pertenezca
+  a otra fuente se toca en ninguno de los dos sentidos.
+
+## Descargas y carpetas sugeridas
+
+Las descargas se comparten: ExtYomi y la standalone usan el mismo árbol SAF, que se guarda en la
+configuración de la app generada y se vuelve a aplicar en el handshake de sincronización. Para
+ordenar los APK y el contenido, el generador sugiere estas carpetas dentro del almacenamiento ya
+configurado:
+
+- `standalone/anime`
+- `standalone/manga`
+- `standalone/novelas`
+
+La sugerencia no es obligatoria: el diálogo ofrece **Usar esta ruta** y también permite elegir
+otra carpeta SAF.
+
 ## Seguridad y límites
 
 - El APK se escribe primero en `cacheDir` privado y solo se copia al árbol SAF seleccionado.
