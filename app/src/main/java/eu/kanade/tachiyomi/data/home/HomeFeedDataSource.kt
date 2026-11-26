@@ -28,6 +28,7 @@ class HomeFeedDataSource(
         anime: Boolean,
         sort: String = "TRENDING_DESC",
         genre: String? = null,
+        page: Int = 1,
     ): List<HomeFeedMedia> = withIOContext {
         val type = if (anime) "ANIME" else "MANGA"
         val genreFilter = if (genre.isNullOrBlank()) {
@@ -36,8 +37,8 @@ class HomeFeedDataSource(
             ", genre_in: [\"" + genre.replace("\"", "\\\"") + "\"]"
         }
         val query = """
-            query Feed(${"$"}type: MediaType!) {
-                Page(perPage: 20) {
+            query Feed(${"$"}type: MediaType!, ${"$"}page: Int!) {
+                Page(page: ${"$"}page, perPage: 20) {
                     media(type: ${"$"}type, sort: $sort, isAdult: false$genreFilter) {
                         id
                         title { userPreferred romaji english }
@@ -46,13 +47,21 @@ class HomeFeedDataSource(
                         description(asHtml: false)
                         format
                         genres
+                        episodes
+                        nextAiringEpisode { airingAt }
                     }
                 }
             }
         """.trimIndent()
         val payload = buildJsonObject {
             put("query", query)
-            put("variables", buildJsonObject { put("type", type) })
+            put(
+                "variables",
+                buildJsonObject {
+                    put("type", type)
+                    put("page", page)
+                },
+            )
         }
 
         with(json) {
@@ -86,6 +95,8 @@ class HomeFeedDataSource(
                         synopsis = media.description.orEmpty(),
                         format = media.format.orEmpty(),
                         genres = media.genres.mapNotNull { it },
+                        episodeCount = media.episodes,
+                        airingAt = media.nextAiringEpisode?.airingAt,
                     )
                 }
         }
@@ -105,6 +116,8 @@ data class HomeFeedMedia(
     val synopsis: String,
     val format: String,
     val genres: List<String>,
+    val episodeCount: Int? = null,
+    val airingAt: Long? = null,
 )
 
 @Serializable
@@ -126,7 +139,12 @@ private data class AniListFeedMedia(
     val format: String? = null,
     // AniList occasionally includes null entries; don't let one break the whole feed.
     val genres: List<String?> = emptyList(),
+    val episodes: Int? = null,
+    val nextAiringEpisode: AniListAiring? = null,
 )
+
+@Serializable
+private data class AniListAiring(val airingAt: Long? = null)
 
 @Serializable
 private data class AniListFeedTitle(

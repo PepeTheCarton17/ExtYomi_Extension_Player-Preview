@@ -2,6 +2,7 @@ package eu.kanade.domain.ui
 
 import eu.kanade.domain.ui.model.AppIcon
 import eu.kanade.domain.ui.model.AppTheme
+import eu.kanade.domain.ui.model.HomeFeedSort
 import eu.kanade.domain.ui.model.HomeTabsMode
 import eu.kanade.domain.ui.model.NavBarLabelMode
 import eu.kanade.domain.ui.model.NavTab
@@ -46,6 +47,23 @@ class UiPreferences(
 
     // Cards shown per horizontal row/section in the new Home (host and standalone).
     fun newHomeItemsPerSection() = preferenceStore.getInt("pref_new_home_items_per_section", 10)
+
+    // New Home (host): independent source blocks for anime / manga / novel. Only the enabled ids
+    // take part in the feed, and the CSV order decides which extension is tried first. These are
+    // deliberately separate from migration/player fallback priorities.
+    fun homeFeedSourceOrder(kind: String) = preferenceStore.getString("pref_home_feed_source_order_$kind", "")
+
+    fun homeFeedDisabledSources(kind: String) = preferenceStore.getStringSet(
+        "pref_home_feed_disabled_sources_$kind",
+        emptySet(),
+    )
+
+    // Category filter/reorder state of the new Home. Defaults are used until the user saves an order.
+    fun homeFeedBlockedCategories() = preferenceStore.getStringSet("pref_home_feed_blocked_categories", emptySet())
+
+    fun homeFeedCategoryOrder() = preferenceStore.getString("pref_home_feed_category_order", "")
+
+    fun homeFeedSort() = preferenceStore.getEnum("pref_home_feed_sort", HomeFeedSort.NONE)
 
     fun bottomNavTabs() = preferenceStore.getStringSet("bottom_nav_tabs", NavTab.DEFAULT)
 

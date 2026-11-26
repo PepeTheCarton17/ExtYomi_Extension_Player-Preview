@@ -60,6 +60,8 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import coil3.compose.AsyncImage
 import eu.kanade.domain.ui.StandaloneScope
+import eu.kanade.domain.ui.model.ContentFormat
+import eu.kanade.domain.ui.model.HomeFeedSort
 import eu.kanade.tachiyomi.ui.browse.anime.source.globalsearch.GlobalAnimeSearchScreen
 import eu.kanade.tachiyomi.ui.browse.manga.source.globalsearch.GlobalMangaSearchScreen
 import eu.kanade.tachiyomi.ui.main.MainActivity
@@ -86,13 +88,36 @@ private fun StandaloneFeedScreenModel.FeedItem.matches(format: FeedFormat): Bool
     FeedFormat.ALL -> true
     FeedFormat.ANIME -> isAnime
     FeedFormat.MANGA -> !isAnime
-    FeedFormat.MOVIE -> this.format.equals("MOVIE", ignoreCase = true)
-    FeedFormat.SERIES -> this.format.equals("TV", ignoreCase = true) ||
-        this.format.equals("TV_SHORT", ignoreCase = true) ||
-        this.format.equals("ONA", ignoreCase = true)
+    FeedFormat.MOVIE ->
+        ContentFormat.MOVIE in contentFormats ||
+            this.format.equals("MOVIE", ignoreCase = true)
+    FeedFormat.SERIES ->
+        ContentFormat.SERIES in contentFormats ||
+            this.format.equals("TV", ignoreCase = true) ||
+            this.format.equals("TV_SHORT", ignoreCase = true) ||
+            this.format.equals("ONA", ignoreCase = true)
     // Popular and Recent are complete sections of their own, not per-card format filters.
     FeedFormat.POPULAR, FeedFormat.RECENT -> true
 }
+
+private fun StandaloneFeedScreenModel.ContinueItem.matches(format: FeedFormat): Boolean = when (format) {
+    FeedFormat.ALL, FeedFormat.ANIME, FeedFormat.MANGA ->
+        format == FeedFormat.ALL || (format == FeedFormat.ANIME) == isAnime
+    // A history entry has no published format/date, so it is hidden in those format chips.
+    else -> false
+}
+
+private fun homeFeedComparator(sort: HomeFeedSort): Comparator<StandaloneFeedScreenModel.FeedItem> =
+    when (sort) {
+        HomeFeedSort.NONE -> Comparator { _, _ -> 0 }
+        HomeFeedSort.ALPHABETICAL -> compareBy(String.CASE_INSENSITIVE_ORDER) { it.title }
+        HomeFeedSort.EPISODE_COUNT -> compareByDescending<StandaloneFeedScreenModel.FeedItem> {
+            it.episodeCount ?: Int.MIN_VALUE
+        }
+        HomeFeedSort.AIRING_DATE -> compareByDescending<StandaloneFeedScreenModel.FeedItem> {
+            it.airingAt ?: Long.MIN_VALUE
+        }
+    }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -172,7 +197,7 @@ fun StandaloneHomeFeedScreen(
     }
 
     if (showSettings) {
-        FeedSettingsDialog(
+        HostFeedSettingsDialog(
             state = state,
             onDismiss = { showSettings = false },
             onToggleFeatured = screenModel::toggleFeatured,
@@ -180,8 +205,11 @@ fun StandaloneHomeFeedScreen(
             onToggleRecommended = screenModel::toggleRecommended,
             onTogglePopular = screenModel::togglePopular,
             onToggleAutoScrollHero = screenModel::toggleAutoScrollHero,
-            onToggleOnlyAvailable = screenModel::toggleOnlyAvailable,
             onSetItemsPerSection = screenModel::setItemsPerSection,
+            onBlockedCategoriesChanged = screenModel::setBlockedCategories,
+            onCategoryOrderChanged = screenModel::setCategoryOrder,
+            onSortChanged = screenModel::setSortMode,
+            onSourcesChanged = screenModel::onSourcePreferencesChanged,
         )
     }
 
@@ -250,19 +278,26 @@ fun StandaloneHomeFeedScreen(
                 state.recent,
                 state.continueList,
                 selectedFormat,
-                state.onlyAvailable,
-                state.itemsPerSection,
+                state.sortMode,
+                state.continueVisibleCount,
             ) {
+                val comparator = homeFeedComparator(state.sortMode)
+
+                // Availability is decided in the model against the enabled sources of the new
+                // setting; the rows reveal itemsPerSection at a time and load further pages.
                 fun List<StandaloneFeedScreenModel.FeedItem>.filtered() = filter {
-                    it.matches(selectedFormat) && (!state.onlyAvailable || it.available != false)
-                }.take(state.itemsPerSection)
+                    it.matches(selectedFormat)
+                }.sortedWith(comparator)
 
                 FeedLists(
                     trending = state.trending.filtered(),
                     recommended = state.recommended.filtered(),
                     popular = state.popular.filtered(),
                     recent = state.recent.filtered(),
-                    continueList = state.continueList.filter { if (animeScope) it.isAnime else !it.isAnime },
+                    continueList = state.continueList
+                        .filter { it.matches(selectedFormat) }
+                        .sortedByDescending { it.seenAt }
+                        .take(state.continueVisibleCount),
                 )
             }
 
@@ -285,20 +320,17 @@ fun StandaloneHomeFeedScreen(
                             onClick = { selectedFormat = FeedFormat.ALL },
                             label = { Text(stringResource(MR.strings.standalone_feed_all)) },
                         )
-                        if (animeScope) {
-                            FilterChip(
-                                selected = selectedFormat == FeedFormat.ANIME,
-                                onClick = { selectedFormat = FeedFormat.ANIME },
-                                label = { Text(stringResource(AYMR.strings.label_anime)) },
-                            )
-                        }
-                        if (mangaScope) {
-                            FilterChip(
-                                selected = selectedFormat == FeedFormat.MANGA,
-                                onClick = { selectedFormat = FeedFormat.MANGA },
-                                label = { Text(stringResource(AYMR.strings.label_manga)) },
-                            )
-                        }
+                        // This composable is the host feed: anime, manga and novel all exist here.
+                        FilterChip(
+                            selected = selectedFormat == FeedFormat.ANIME,
+                            onClick = { selectedFormat = FeedFormat.ANIME },
+                            label = { Text(stringResource(AYMR.strings.label_anime)) },
+                        )
+                        FilterChip(
+                            selected = selectedFormat == FeedFormat.MANGA,
+                            onClick = { selectedFormat = FeedFormat.MANGA },
+                            label = { Text(stringResource(AYMR.strings.label_manga)) },
+                        )
                         FilterChip(
                             selected = selectedFormat == FeedFormat.MOVIE,
                             onClick = { selectedFormat = FeedFormat.MOVIE },
@@ -348,6 +380,19 @@ fun StandaloneHomeFeedScreen(
                                     onClick = onFeedItemClick,
                                     modifier = Modifier.padding(horizontal = 16.dp),
                                 )
+                                if (state.sectionPages[StandaloneFeedScreenModel.SECTION_TRENDING]
+                                        ?.hasNextPage == true
+                                ) {
+                                    TextButton(
+                                        onClick = {
+                                            screenModel.loadMoreSection(
+                                                StandaloneFeedScreenModel.SECTION_TRENDING,
+                                            )
+                                        },
+                                    ) {
+                                        Text(stringResource(MR.strings.standalone_feed_load_more))
+                                    }
+                                }
                             }
                         }
 
@@ -361,25 +406,84 @@ fun StandaloneHomeFeedScreen(
                                     items(items = visible.continueList, key = { "continue-${it.id}" }) { item ->
                                         ContinueCard(item, onClick = { onContinueClick(item) })
                                     }
+                                    if (state.continueList.count { it.matches(selectedFormat) } >
+                                        visible.continueList.size
+                                    ) {
+                                        item(key = "continue-load-more") {
+                                            TextButton(onClick = screenModel::loadMoreContinue) {
+                                                Text(stringResource(MR.strings.standalone_feed_load_more))
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
 
-                        item {
-                            FeedSection(
-                                enabled = state.showRecommended,
-                                title = stringResource(MR.strings.standalone_feed_recommended),
-                                feedItems = visible.recommended,
-                                onClick = onFeedItemClick,
-                            )
+                        if (state.showRecommended) {
+                            item(key = "recommended") {
+                                GlobalFeedRow(
+                                    loadMoreKey = StandaloneFeedScreenModel.SECTION_RECOMMENDED,
+                                    title = stringResource(MR.strings.standalone_feed_recommended),
+                                    items = visible.recommended,
+                                    itemsPerSection = state.itemsPerSection,
+                                    hasNextPage = state.sectionPages[
+                                        StandaloneFeedScreenModel.SECTION_RECOMMENDED,
+                                    ]?.hasNextPage == true,
+                                    isLoadingMore = state.sectionPages[
+                                        StandaloneFeedScreenModel.SECTION_RECOMMENDED,
+                                    ]?.isLoadingMore == true,
+                                    onClick = onFeedItemClick,
+                                    onLoadMore = {
+                                        screenModel.loadMoreSection(
+                                            StandaloneFeedScreenModel.SECTION_RECOMMENDED,
+                                        )
+                                    },
+                                )
+                            }
                         }
-                        item {
-                            FeedSection(
-                                enabled = state.showPopular,
-                                title = stringResource(MR.strings.standalone_feed_popular),
-                                feedItems = visible.popular,
-                                onClick = onFeedItemClick,
-                            )
+                        if (state.showPopular) {
+                            item(key = "popular") {
+                                GlobalFeedRow(
+                                    loadMoreKey = StandaloneFeedScreenModel.SECTION_POPULAR,
+                                    title = stringResource(MR.strings.standalone_feed_popular),
+                                    items = visible.popular,
+                                    itemsPerSection = state.itemsPerSection,
+                                    hasNextPage = state.sectionPages[
+                                        StandaloneFeedScreenModel.SECTION_POPULAR,
+                                    ]?.hasNextPage == true,
+                                    isLoadingMore = state.sectionPages[
+                                        StandaloneFeedScreenModel.SECTION_POPULAR,
+                                    ]?.isLoadingMore == true,
+                                    onClick = onFeedItemClick,
+                                    onLoadMore = {
+                                        screenModel.loadMoreSection(
+                                            StandaloneFeedScreenModel.SECTION_POPULAR,
+                                        )
+                                    },
+                                )
+                            }
+                        }
+
+                        // Generated rows: genres, then per-extension "de todo lo disponible",
+                        // then películas/series. They respect the category filter and source priority.
+                        state.feedRows.forEach { row ->
+                            val rowItems = row.items.filter { it.matches(selectedFormat) }
+                            if (rowItems.isEmpty()) return@forEach
+                            item(key = row.key) {
+                                GlobalFeedRow(
+                                    loadMoreKey = row.key,
+                                    title = feedRowTitle(row),
+                                    subtitle = row.sourceName?.let {
+                                        stringResource(MR.strings.home_feed_from_all)
+                                    },
+                                    items = rowItems,
+                                    itemsPerSection = state.itemsPerSection,
+                                    hasNextPage = state.sectionPages[row.key]?.hasNextPage == true,
+                                    isLoadingMore = state.sectionPages[row.key]?.isLoadingMore == true,
+                                    onClick = onFeedItemClick,
+                                    onLoadMore = { screenModel.loadMoreSection(row.key) },
+                                )
+                            }
                         }
                     }
                 }
@@ -440,6 +544,98 @@ private fun FeedSection(
         items(items = feedItems, key = { "${it.isAnime}-${it.id}" }) { item ->
             FeedCard(item, onClick = { onClick(item) })
         }
+    }
+}
+
+/** Horizontal row that reveals itemsPerSection cards at a time, then loads another page. */
+@Composable
+private fun GlobalFeedRow(
+    loadMoreKey: String,
+    title: String,
+    items: List<StandaloneFeedScreenModel.FeedItem>,
+    itemsPerSection: Int,
+    hasNextPage: Boolean,
+    isLoadingMore: Boolean,
+    subtitle: String? = null,
+    onClick: (StandaloneFeedScreenModel.FeedItem) -> Unit,
+    onLoadMore: () -> Unit,
+) {
+    if (items.isEmpty()) return
+    val pageSize = itemsPerSection.coerceAtLeast(1)
+    var visibleCount by remember(loadMoreKey) { mutableStateOf(pageSize) }
+    LaunchedEffect(pageSize) {
+        if (visibleCount < pageSize) visibleCount = pageSize
+    }
+    val visible = items.take(visibleCount)
+
+    SectionTitle(title)
+    if (subtitle != null) {
+        Text(
+            text = subtitle,
+            modifier = Modifier.padding(horizontal = 16.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(4.dp))
+    }
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        items(items = visible, key = { "${it.isAnime}-${it.localId ?: it.id}" }) { item ->
+            FeedCard(item, onClick = { onClick(item) })
+        }
+        val hasCachedMore = visibleCount < items.size
+        if (visible.isNotEmpty() && (hasCachedMore || hasNextPage)) {
+            item(key = "$loadMoreKey-$visibleCount-${items.size}") {
+                // Reaching the end of the row asks the model for the next page.
+                LaunchedEffect(Unit) {
+                    if (!hasCachedMore) onLoadMore()
+                }
+                TextButton(onClick = {
+                    if (hasCachedMore) {
+                        visibleCount = (visibleCount + pageSize).coerceAtMost(items.size)
+                    } else {
+                        onLoadMore()
+                    }
+                }, enabled = !isLoadingMore) {
+                    Text(
+                        stringResource(
+                            if (isLoadingMore && !hasCachedMore) {
+                                MR.strings.standalone_feed_loading_more
+                            } else {
+                                MR.strings.standalone_feed_load_more
+                            },
+                        ),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun feedRowTitle(row: StandaloneFeedScreenModel.FeedRow): String {
+    val kind = when (row.kind) {
+        StandaloneFeedScreenModel.KIND_ANIME -> stringResource(MR.strings.home_feed_kind_anime)
+        StandaloneFeedScreenModel.KIND_MANGA -> stringResource(MR.strings.home_feed_kind_manga)
+        else -> stringResource(MR.strings.home_feed_kind_novel)
+    }
+    return when {
+        row.sourceName != null -> stringResource(MR.strings.home_feed_row_source, row.sourceName)
+        row.format != null -> stringResource(
+            MR.strings.home_feed_row_format,
+            when (row.format) {
+                ContentFormat.MOVIE -> stringResource(MR.strings.home_feed_movies)
+                else -> stringResource(MR.strings.home_feed_series)
+            },
+            kind.lowercase(),
+        )
+        else -> stringResource(
+            MR.strings.home_feed_row_category,
+            kind,
+            row.category?.lowercase().orEmpty(),
+        )
     }
 }
 
