@@ -70,11 +70,12 @@ fuente. La extensión debe seguir instalada en el dispositivo.
 
 ## Inicio: filas o catálogo vertical
 
-Cada sección del Home standalone tiene su propio conmutador en la cabecera. La fila horizontal
-sigue usando el mismo listing `latest` que el catálogo de la extensión y carga más al llegar al
-final; al cambiar a vertical, esa misma sección pasa a un grid paginado construido con
-`BrowseAnimeSourceContent` / `BrowseSourceContent` y el filtro de la sección. Tableta muestra unas
-9 entradas por línea y el móvil unas 2. El cambio ocurre en el mismo Home, sin abrir otra pantalla.
+Cada sección del Home —tanto en la standalone como en el host ExtYomi— tiene su propio conmutador en
+la cabecera. La fila horizontal sigue usando el mismo listing que el catálogo de la fuente y carga
+más al llegar al final, sin botones «cargar más»; al cambiar a vertical, esa misma sección pasa a un
+grid paginado construido con `BrowseAnimeSourceContent` / `BrowseSourceContent` en la standalone y
+con el grid del feed en el host. Tableta muestra unas 9 entradas por línea y el móvil unas 2. El
+cambio ocurre en el mismo Home, sin abrir otra pantalla.
 
 ## Biblioteca, categorías y sincronización
 
@@ -119,9 +120,10 @@ configurado:
 - `standalone/manga`
 - `standalone/novelas`
 
-Estas cuatro carpetas se crean al iniciar ExtYomi y al cambiar el almacenamiento base, no solo
-cuando se abre la pestaña de generación. La sugerencia no es obligatoria: el diálogo ofrece
-**Usar esta ruta** y también permite elegir otra carpeta SAF.
+Estas carpetas las crea solo el generador (ExtYomi), y solo cuando se abre la pestaña «Apps
+independientes». Una app generada no crea `standalone/` en su almacenamiento: hereda el mismo árbol
+SAF que el host, pero no genera la carpeta de salida de APK. La sugerencia no es obligatoria: el
+diálogo ofrece **Usar esta ruta** y también permite elegir otra carpeta SAF.
 
 ## Seguridad y límites
 
