@@ -598,26 +598,25 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
             val candidates = support[category]?.filter { it.kind == kind }.orEmpty().ifEmpty { refs }
 
             var cursor = cursors[kind] ?: 0
-            var picked: HostSource? = null
-            var result: Pair<List<FeedItem>, Boolean>? = null
+            var chosen: Pair<HostSource, Pair<List<FeedItem>, Boolean>>? = null
             for (offset in candidates.indices) {
                 val ref = candidates[(cursor + offset) % candidates.size]
                 val page = fetchCategoryPage(ref, category, 1)
                 if (page.first.isNotEmpty()) {
-                    picked = ref
-                    result = page
+                    chosen = ref to page
                     cursor = (candidates.indexOf(ref) + 1) % candidates.size
                     break
                 }
             }
-            if (picked == null) {
+            if (chosen == null) {
                 // No source served the category: fall back to the first one, as requested.
-                picked = candidates[cursor % candidates.size]
-                result = fetchCategoryPage(picked, category, 1)
+                val ref = candidates[cursor % candidates.size]
+                chosen = ref to fetchCategoryPage(ref, category, 1)
                 cursor = (cursor + 1) % candidates.size
             }
             cursors[kind] = cursor
 
+            val (picked, result) = chosen ?: continue
             val items = result.first.filterNot { it.rowKey in used }
                 .take(mutableState.value.itemsPerSection)
             if (items.isEmpty()) continue
