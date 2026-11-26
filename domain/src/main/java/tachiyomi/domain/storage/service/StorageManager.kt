@@ -29,8 +29,8 @@ class StorageManager(
         .shareIn(scope, SharingStarted.Lazily, 1)
 
     init {
-        // Create the suggested standalone folders on startup too: on a fresh install the storage
-        // preference is already set, so the `changes()` flow below never fires.
+        // Only the generator needs the `standalone` output folders. They are created on demand by
+        // getStandaloneAppsDirectory(), so a generated app never creates them in its own storage.
         baseDir?.let(::initializeDirectories)
         storagePreferences.baseStorageDirectory().changes()
             .drop(1)
@@ -61,7 +61,6 @@ class StorageManager(
         parent.ensureDirectory(LOCAL_ANIMESOURCE_PATH)
         parent.ensureDirectory(LOCAL_NOVELSOURCE_PATH)
         parent.ensureDirectory(DOWNLOADS_PATH)?.let { DiskUtil.createNoMediaFile(it, context) }
-        createStandaloneDirectories(parent)
         parent.ensureDirectory(MPV_CONFIG_PATH)?.let { mpvDir ->
             mpvDir.ensureDirectory(FONTS_PATH)
             mpvDir.ensureDirectory(SCRIPTS_PATH)
@@ -80,10 +79,7 @@ class StorageManager(
     }
 
     fun getStandaloneAppsDirectory(): UniFile? {
-        return baseDir?.let { root ->
-            createStandaloneDirectories(root)
-            root.ensureDirectory(STANDALONE_APPS_PATH)
-        }
+        return baseDir?.let(::createStandaloneDirectories)
     }
 
     /** Suggested output folder for a standalone, by content kind. */
@@ -97,11 +93,12 @@ class StorageManager(
         return getStandaloneAppsDirectory()?.ensureDirectory(child)
     }
 
-    private fun createStandaloneDirectories(parent: UniFile) {
-        val root = parent.ensureDirectory(STANDALONE_APPS_PATH) ?: return
+    private fun createStandaloneDirectories(parent: UniFile): UniFile? {
+        val root = parent.ensureDirectory(STANDALONE_APPS_PATH) ?: return null
         root.ensureDirectory(STANDALONE_ANIME_PATH)
         root.ensureDirectory(STANDALONE_MANGA_PATH)
         root.ensureDirectory(STANDALONE_NOVEL_PATH)
+        return root
     }
 
     fun getLocalMangaSourceDirectory(): UniFile? {

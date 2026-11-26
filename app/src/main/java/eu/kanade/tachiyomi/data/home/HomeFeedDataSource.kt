@@ -13,13 +13,14 @@ import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody
 import tachiyomi.core.common.util.lang.withIOContext
 import uy.kohesive.injekt.injectLazy
+import java.util.concurrent.TimeUnit
 
 /**
  * Read-only AniList GraphQL feed. No OAuth token is used: this is the public endpoint and the
  * tracking login is deliberately left alone. Cover URLs returned by the API are kept verbatim.
  */
 class HomeFeedDataSource(
-    private val client: OkHttpClient = OkHttpClient(),
+    private val client: OkHttpClient = defaultClient(),
 ) {
 
     private val json: Json by injectLazy()
@@ -104,6 +105,15 @@ class HomeFeedDataSource(
 
     companion object {
         private const val API_URL = "https://graphql.anilist.co/"
+        private const val TIMEOUT_SECONDS = 12L
+
+        /** A bounded client keeps a slow AniList response from stalling the whole Home. */
+        private fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
+            .connectTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .readTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .writeTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .callTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .build()
     }
 }
 

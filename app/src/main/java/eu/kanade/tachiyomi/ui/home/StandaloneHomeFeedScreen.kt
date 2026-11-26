@@ -17,15 +17,21 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.ViewModule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -47,6 +53,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -147,6 +154,16 @@ fun StandaloneHomeFeedScreen(
     val scope = rememberCoroutineScope()
     var selectedFormat by remember { mutableStateOf(FeedFormat.ALL) }
     var showSettings by remember { mutableStateOf(false) }
+    // Sections toggled to the same catalogue-style vertical grid used by the standalone apps.
+    var gridSections by remember { mutableStateOf(emptySet<String>()) }
+
+    fun toggleSectionView(sectionKey: String) {
+        gridSections = if (sectionKey in gridSections) {
+            gridSections - sectionKey
+        } else {
+            gridSections + sectionKey
+        }
+    }
 
     // Re-selecting the Home tab opens the feed settings, as in Animetail.
     LaunchedEffect(requestSettings) {
@@ -160,6 +177,7 @@ fun StandaloneHomeFeedScreen(
     val mangaScope = StandaloneScope.appliesTo(StandaloneScope.KIND_MANGA) ||
         StandaloneScope.appliesTo(StandaloneScope.KIND_NOVEL)
     val extensionFilter = StandaloneScope.extensionPkg.ifBlank { null }
+    val feedListState = rememberLazyListState()
 
     val onFeedItemClick: (StandaloneFeedScreenModel.FeedItem) -> Unit = { item ->
         if (item.isAnime) {
@@ -301,7 +319,20 @@ fun StandaloneHomeFeedScreen(
                 )
             }
 
+            val hasMorePages = state.continueList.size > state.continueVisibleCount ||
+                state.sectionPages.values.any { it.hasNextPage && !it.isLoadingMore }
+            LaunchedEffect(feedListState, hasMorePages) {
+                snapshotFlow {
+                    val info = feedListState.layoutInfo
+                    val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: 0
+                    lastVisible >= info.totalItemsCount - 4
+                }.collect { atEnd ->
+                    if (atEnd && hasMorePages) screenModel.loadNextPage()
+                }
+            }
+
             LazyColumn(
+                state = feedListState,
                 modifier = modifier
                     .fillMaxSize()
                     .padding(padding),
@@ -360,6 +391,11 @@ fun StandaloneHomeFeedScreen(
                             enabled = true,
                             title = stringResource(MR.strings.standalone_feed_recent),
                             feedItems = visible.recent,
+                            sectionKey = StandaloneFeedScreenModel.SECTION_RECENT,
+                            gridMode = StandaloneFeedScreenModel.SECTION_RECENT in gridSections,
+                            onToggleView = {
+                                toggleSectionView(StandaloneFeedScreenModel.SECTION_RECENT)
+                            },
                             onClick = onFeedItemClick,
                         )
                     }
@@ -368,6 +404,11 @@ fun StandaloneHomeFeedScreen(
                             enabled = true,
                             title = stringResource(MR.strings.standalone_feed_popular),
                             feedItems = visible.popular,
+                            sectionKey = StandaloneFeedScreenModel.SECTION_POPULAR,
+                            gridMode = StandaloneFeedScreenModel.SECTION_POPULAR in gridSections,
+                            onToggleView = {
+                                toggleSectionView(StandaloneFeedScreenModel.SECTION_POPULAR)
+                            },
                             onClick = onFeedItemClick,
                         )
                     }
@@ -380,39 +421,38 @@ fun StandaloneHomeFeedScreen(
                                     onClick = onFeedItemClick,
                                     modifier = Modifier.padding(horizontal = 16.dp),
                                 )
-                                if (state.sectionPages[StandaloneFeedScreenModel.SECTION_TRENDING]
-                                        ?.hasNextPage == true
-                                ) {
-                                    TextButton(
-                                        onClick = {
-                                            screenModel.loadMoreSection(
-                                                StandaloneFeedScreenModel.SECTION_TRENDING,
-                                            )
-                                        },
-                                    ) {
-                                        Text(stringResource(MR.strings.standalone_feed_load_more))
-                                    }
-                                }
                             }
                         }
 
                         if (state.showContinue && visible.continueList.isNotEmpty()) {
                             item {
-                                SectionTitle(stringResource(MR.strings.standalone_feed_continue))
+                                val continueState = rememberLazyListState()
+                                val moreContinue = state.continueList.count { it.matches(selectedFormat) } >
+                                    visible.continueList.size
+                                LaunchedEffect(continueState, moreContinue) {
+                                    snapshotFlow {
+                                        val info = continueState.layoutInfo
+                                        val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: 0
+                                        lastVisible >= info.totalItemsCount - 2
+                                    }.collect { atEnd ->
+                                        if (atEnd && moreContinue) screenModel.loadMoreContinue()
+                                    }
+                                }
+                                SectionTitle(
+                                    title = stringResource(MR.strings.standalone_feed_continue),
+                                    showToggle = false,
+                                )
                                 LazyRow(
+                                    state = continueState,
                                     contentPadding = PaddingValues(horizontal = 16.dp),
                                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 ) {
                                     items(items = visible.continueList, key = { it.feedKey() }) { item ->
                                         ContinueCard(item, onClick = { onContinueClick(item) })
                                     }
-                                    if (state.continueList.count { it.matches(selectedFormat) } >
-                                        visible.continueList.size
-                                    ) {
-                                        item(key = "continue-load-more") {
-                                            TextButton(onClick = screenModel::loadMoreContinue) {
-                                                Text(stringResource(MR.strings.standalone_feed_load_more))
-                                            }
+                                    if (moreContinue) {
+                                        item(key = "continue-load-more-sentinel") {
+                                            Box(Modifier.size(1.dp))
                                         }
                                     }
                                 }
@@ -432,6 +472,11 @@ fun StandaloneHomeFeedScreen(
                                     isLoadingMore = state.sectionPages[
                                         StandaloneFeedScreenModel.SECTION_RECOMMENDED,
                                     ]?.isLoadingMore == true,
+                                    sectionKey = StandaloneFeedScreenModel.SECTION_RECOMMENDED,
+                                    gridMode = StandaloneFeedScreenModel.SECTION_RECOMMENDED in gridSections,
+                                    onToggleView = {
+                                        toggleSectionView(StandaloneFeedScreenModel.SECTION_RECOMMENDED)
+                                    },
                                     onClick = onFeedItemClick,
                                     onLoadMore = {
                                         screenModel.loadMoreSection(
@@ -454,6 +499,11 @@ fun StandaloneHomeFeedScreen(
                                     isLoadingMore = state.sectionPages[
                                         StandaloneFeedScreenModel.SECTION_POPULAR,
                                     ]?.isLoadingMore == true,
+                                    sectionKey = StandaloneFeedScreenModel.SECTION_POPULAR,
+                                    gridMode = StandaloneFeedScreenModel.SECTION_POPULAR in gridSections,
+                                    onToggleView = {
+                                        toggleSectionView(StandaloneFeedScreenModel.SECTION_POPULAR)
+                                    },
                                     onClick = onFeedItemClick,
                                     onLoadMore = {
                                         screenModel.loadMoreSection(
@@ -480,6 +530,9 @@ fun StandaloneHomeFeedScreen(
                                     itemsPerSection = state.itemsPerSection,
                                     hasNextPage = state.sectionPages[row.key]?.hasNextPage == true,
                                     isLoadingMore = state.sectionPages[row.key]?.isLoadingMore == true,
+                                    sectionKey = row.key,
+                                    gridMode = row.key in gridSections,
+                                    onToggleView = { toggleSectionView(row.key) },
                                     onClick = onFeedItemClick,
                                     onLoadMore = { screenModel.loadMoreSection(row.key) },
                                 )
@@ -488,13 +541,18 @@ fun StandaloneHomeFeedScreen(
                     }
                 }
 
+                val generatedVisible = state.feedRows.any { row ->
+                    row.items.any { it.matches(selectedFormat) }
+                }
                 val nothingToShow = when (selectedFormat) {
                     FeedFormat.RECENT -> visible.recent.isEmpty()
                     FeedFormat.POPULAR -> visible.popular.isEmpty()
                     else -> visible.trending.isEmpty() &&
                         visible.recommended.isEmpty() &&
                         visible.popular.isEmpty() &&
-                        visible.continueList.isEmpty()
+                        visible.recent.isEmpty() &&
+                        visible.continueList.isEmpty() &&
+                        !generatedVisible
                 }
                 if (nothingToShow) {
                     item {
@@ -519,12 +577,36 @@ private data class FeedLists(
 )
 
 @Composable
-private fun SectionTitle(title: String) {
-    Text(
-        text = title,
-        modifier = Modifier.padding(horizontal = 16.dp),
-        style = MaterialTheme.typography.titleMedium,
-    )
+private fun SectionTitle(
+    title: String,
+    gridMode: Boolean = false,
+    onToggle: () -> Unit = {},
+    showToggle: Boolean = true,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = title,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        if (showToggle) {
+            IconButton(onClick = onToggle) {
+                Icon(
+                    imageVector = if (gridMode) {
+                        Icons.AutoMirrored.Filled.ViewList
+                    } else {
+                        Icons.Filled.ViewModule
+                    },
+                    contentDescription = stringResource(MR.strings.standalone_feed_toggle_view),
+                )
+            }
+        }
+    }
     Spacer(Modifier.height(8.dp))
 }
 
@@ -533,16 +615,53 @@ private fun FeedSection(
     enabled: Boolean,
     title: String,
     feedItems: List<StandaloneFeedScreenModel.FeedItem>,
+    sectionKey: String? = null,
+    gridMode: Boolean = false,
+    onToggleView: () -> Unit = {},
     onClick: (StandaloneFeedScreenModel.FeedItem) -> Unit,
 ) {
     if (!enabled || feedItems.isEmpty()) return
-    SectionTitle(title)
-    LazyRow(
-        contentPadding = PaddingValues(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    SectionTitle(
+        title = title,
+        gridMode = gridMode,
+        onToggle = onToggleView,
+        showToggle = sectionKey != null,
+    )
+    if (gridMode) {
+        HostFeedGrid(items = feedItems, onClick = onClick)
+    } else {
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            items(items = feedItems, key = { "${it.isAnime}-${it.id}" }) { item ->
+                FeedCard(item, onClick = { onClick(item) })
+            }
+        }
+    }
+}
+
+/** Catalogue-style vertical strip, the same layout the standalone apps use for a section. */
+@Composable
+private fun HostFeedGrid(
+    items: List<StandaloneFeedScreenModel.FeedItem>,
+    onClick: (StandaloneFeedScreenModel.FeedItem) -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(420.dp)
+            .padding(horizontal = 12.dp),
     ) {
-        items(items = feedItems, key = { "${it.isAnime}-${it.id}" }) { item ->
-            FeedCard(item, onClick = { onClick(item) })
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(128.dp),
+            contentPadding = PaddingValues(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            items(items = items, key = { "${it.isAnime}-${it.localId ?: it.id}" }) { item ->
+                FeedCard(item, onClick = { onClick(item) })
+            }
         }
     }
 }
@@ -557,6 +676,9 @@ private fun GlobalFeedRow(
     hasNextPage: Boolean,
     isLoadingMore: Boolean,
     subtitle: String? = null,
+    sectionKey: String? = null,
+    gridMode: Boolean = false,
+    onToggleView: () -> Unit = {},
     onClick: (StandaloneFeedScreenModel.FeedItem) -> Unit,
     onLoadMore: () -> Unit,
 ) {
@@ -567,8 +689,14 @@ private fun GlobalFeedRow(
         if (visibleCount < pageSize) visibleCount = pageSize
     }
     val visible = items.take(visibleCount)
+    val hasCachedMore = visibleCount < items.size
 
-    SectionTitle(title)
+    SectionTitle(
+        title = title,
+        gridMode = gridMode,
+        onToggle = onToggleView,
+        showToggle = sectionKey != null,
+    )
     if (subtitle != null) {
         Text(
             text = subtitle,
@@ -578,37 +706,46 @@ private fun GlobalFeedRow(
         )
         Spacer(Modifier.height(4.dp))
     }
+
+    if (gridMode) {
+        HostFeedGrid(items = visible, onClick = onClick)
+        return
+    }
+
+    val rowState = rememberLazyListState()
+    LaunchedEffect(
+        rowState,
+        visibleCount,
+        items.size,
+        hasCachedMore,
+        hasNextPage,
+        isLoadingMore,
+    ) {
+        snapshotFlow {
+            val info = rowState.layoutInfo
+            val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: 0
+            lastVisible to info.totalItemsCount
+        }.collect { (lastVisible, total) ->
+            if (total <= 1 || lastVisible < total - 2) return@collect
+            if (hasCachedMore) {
+                visibleCount = (visibleCount + pageSize).coerceAtMost(items.size)
+            } else if (hasNextPage && !isLoadingMore) {
+                onLoadMore()
+            }
+        }
+    }
     LazyRow(
+        state = rowState,
         contentPadding = PaddingValues(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         items(items = visible, key = { "${it.isAnime}-${it.localId ?: it.id}" }) { item ->
             FeedCard(item, onClick = { onClick(item) })
         }
-        val hasCachedMore = visibleCount < items.size
-        if (visible.isNotEmpty() && (hasCachedMore || hasNextPage)) {
-            item(key = "$loadMoreKey-$visibleCount-${items.size}") {
-                // Reaching the end of the row asks the model for the next page.
-                LaunchedEffect(Unit) {
-                    if (!hasCachedMore) onLoadMore()
-                }
-                TextButton(onClick = {
-                    if (hasCachedMore) {
-                        visibleCount = (visibleCount + pageSize).coerceAtMost(items.size)
-                    } else {
-                        onLoadMore()
-                    }
-                }, enabled = !isLoadingMore) {
-                    Text(
-                        stringResource(
-                            if (isLoadingMore && !hasCachedMore) {
-                                MR.strings.standalone_feed_loading_more
-                            } else {
-                                MR.strings.standalone_feed_load_more
-                            },
-                        ),
-                    )
-                }
+        if (hasCachedMore || hasNextPage) {
+            // Invisible end sentinel: reaching it reveals cached cards or fetches the next page.
+            item(key = "$loadMoreKey-$visibleCount-${items.size}-sentinel") {
+                Box(Modifier.size(1.dp))
             }
         }
     }
