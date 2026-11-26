@@ -7,16 +7,20 @@ import eu.kanade.domain.entries.anime.model.toDomainAnime
 import eu.kanade.domain.entries.manga.model.toDomainManga
 import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.domain.ui.UiPreferences
+import eu.kanade.domain.ui.model.ContentFormat
+import eu.kanade.domain.ui.model.HomeFeedSort
 import eu.kanade.tachiyomi.animesource.AnimeCatalogueSource
 import eu.kanade.tachiyomi.animesource.model.AnimeFilter
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.data.home.HomeFeedDataSource
+import eu.kanade.tachiyomi.data.home.HomeFeedFormatMetadata
 import eu.kanade.tachiyomi.data.home.HomeFeedMedia
 import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.SManga
+import eu.kanade.tachiyomi.ui.reader.loader.NovelSourceCompat
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -76,6 +80,9 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
     private var pendingSearchQuery = ""
     private var currentTrendingName: String? = null
 
+    /** Genre used by the host's "recommended" request; reused when that row loads more pages. */
+    private var currentHostGenre: String? = null
+
     /** Current Home filters, exposed so the in-place catalogue grid shows the same listing. */
     val activeAnimeFilters: AnimeFilterList? get() = currentAnimeFilters
     val activeMangaFilters: FilterList? get() = currentMangaFilters
@@ -86,6 +93,11 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
         mutableState.update {
             it.copy(
                 itemsPerSection = uiPreferences.newHomeItemsPerSection().get().coerceIn(
+                    MIN_ITEMS_PER_SECTION,
+                    MAX_ITEMS_PER_SECTION,
+                ),
+                sortMode = uiPreferences.homeFeedSort().get(),
+                continueVisibleCount = uiPreferences.newHomeItemsPerSection().get().coerceIn(
                     MIN_ITEMS_PER_SECTION,
                     MAX_ITEMS_PER_SECTION,
                 ),
@@ -104,34 +116,7 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
                 refreshFromSource(continueList)
                 return@launchIO
             }
-
-            val trendingAnime = if (isAnimeScope) safeFeed(true, "TRENDING_DESC") else emptyList()
-            val trendingManga = if (isMangaContent) safeFeed(false, "TRENDING_DESC") else emptyList()
-            val trending = (trendingAnime + trendingManga).map(::toGlobalFeedItem)
-
-            // Use the first genre of the top trending title to give recommendations a personal touch.
-            val genre = trending.firstOrNull()?.genres?.firstOrNull()
-            val recommendedAnime = if (isAnimeScope) safeFeed(true, "SCORE_DESC", genre) else emptyList()
-            val recommendedManga = if (isMangaContent) safeFeed(false, "SCORE_DESC", genre) else emptyList()
-            val recommended = (recommendedAnime + recommendedManga).map(::toGlobalFeedItem)
-
-            val popularAnime = if (isAnimeScope) safeFeed(true, "POPULARITY_DESC") else emptyList()
-            val popularManga = if (isMangaContent) safeFeed(false, "POPULARITY_DESC") else emptyList()
-            val popular = (popularAnime + popularManga).map(::toGlobalFeedItem)
-            // "Recent" uses the same latest listing as the normal catalogue, not history.
-            val recent = loadGlobalRecent()
-
-            mutableState.update {
-                it.copy(
-                    isLoading = false,
-                    isRefreshing = false,
-                    trending = trending,
-                    recommended = recommended,
-                    popular = popular,
-                    recent = recent,
-                    continueList = continueList,
-                )
-            }
+            refreshHost(continueList)
         }
     }
 
@@ -282,15 +267,18 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
     fun setItemsPerSection(count: Int) {
         val coerced = count.coerceIn(MIN_ITEMS_PER_SECTION, MAX_ITEMS_PER_SECTION)
         uiPreferences.newHomeItemsPerSection().set(coerced)
-        mutableState.update { it.copy(itemsPerSection = coerced) }
+        mutableState.update {
+            it.copy(itemsPerSection = coerced, continueVisibleCount = coerced)
+        }
     }
 
     private suspend fun safeFeed(
         anime: Boolean,
         sort: String,
         genre: String? = null,
+        page: Int = 1,
     ): List<HomeFeedMedia> {
-        return runCatching { dataSource.getMedia(anime, sort, genre) }.getOrDefault(emptyList())
+        return runCatching { dataSource.getMedia(anime, sort, genre, page) }.getOrDefault(emptyList())
     }
 
     private fun toGlobalFeedItem(media: HomeFeedMedia) = FeedItem(
@@ -302,18 +290,20 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
         synopsis = media.synopsis,
         format = media.format,
         genres = media.genres,
+        contentFormats = HomeFeedFormatMetadata.detect(null, media.genres, media.format),
+        episodeCount = media.episodeCount,
+        airingAt = media.airingAt,
     )
 
     /**
      * Host: "Recent" uses each enabled extension's latest listing, the same source as the normal
      * catalogue's Latest page. History and library updates are deliberately not used here.
      */
-    private suspend fun loadGlobalRecent(): List<FeedItem> = withIOContext {
-        val animeSources = if (isAnimeScope) animeSourceManager.getCatalogueSources() else emptyList()
-        val mangaSources = if (isMangaContent) mangaSourceManager.getCatalogueSources() else emptyList()
+    private suspend fun loadGlobalRecent(sources: List<HostSource>): List<FeedItem> = withIOContext {
         coroutineScope {
             val animeRecent = async {
-                animeSources.take(MAX_RECENT_SOURCES).mapNotNull { source ->
+                sources.filter { it.kind == KIND_ANIME }.take(MAX_RECENT_SOURCES).mapNotNull { ref ->
+                    val source = animeSourceFor(ref.id) ?: return@mapNotNull null
                     val page = runCatching {
                         withTimeout(SEARCH_TIMEOUT) { source.getLatestUpdates(1) }
                     }.getOrNull() ?: return@mapNotNull null
@@ -328,12 +318,18 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
                             format = "",
                             genres = anime.getGenres().orEmpty(),
                             available = true,
+                            contentFormats = HomeFeedFormatMetadata.detect(
+                                source,
+                                anime.getGenres().orEmpty(),
+                                "",
+                            ),
                         )
                     }
                 }.flatten()
             }
             val mangaRecent = async {
-                mangaSources.take(MAX_RECENT_SOURCES).mapNotNull { source ->
+                sources.filter { it.kind != KIND_ANIME }.take(MAX_RECENT_SOURCES).mapNotNull { ref ->
+                    val source = mangaSourceFor(ref.id) ?: return@mapNotNull null
                     val page = runCatching {
                         withTimeout(SEARCH_TIMEOUT) { source.getLatestUpdates(1) }
                     }.getOrNull() ?: return@mapNotNull null
@@ -348,6 +344,11 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
                             format = "",
                             genres = manga.getGenres().orEmpty(),
                             available = true,
+                            contentFormats = HomeFeedFormatMetadata.detect(
+                                source,
+                                manga.getGenres().orEmpty(),
+                                "",
+                            ),
                         )
                     }
                 }.flatten()
@@ -358,12 +359,15 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
     }
 
     private suspend fun loadContinue(): List<ContinueItem> = withIOContext {
+        // In the host the row is one mixed, recency-ordered timeline; keep enough entries there for
+        // "load more". A standalone still shows only its single source and keeps the old small cap.
+        val limit = if (isStandalone) 8 else MAX_HOST_CONTINUE_ENTRIES
         buildList {
             if (isAnimeScope) {
                 getAnimeHistory.subscribe("")
                     .first()
                     .filter { !isStandalone || it.coverData.sourceId == sourceId }
-                    .take(8)
+                    .take(limit)
                     .forEach { history ->
                         add(
                             ContinueItem(
@@ -375,6 +379,7 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
                                 coverUrl = history.coverData.url,
                                 isAnime = true,
                                 isNovel = false,
+                                seenAt = history.seenAt?.time ?: 0L,
                             ),
                         )
                     }
@@ -385,7 +390,7 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
                     .filter {
                         !isStandalone || (it.coverData.sourceId == sourceId && it.isNovel == isNovelScope)
                     }
-                    .take(8)
+                    .take(limit)
                     .forEach { history ->
                         add(
                             ContinueItem(
@@ -397,12 +402,493 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
                                 coverUrl = history.coverData.url,
                                 isAnime = false,
                                 isNovel = history.isNovel,
+                                seenAt = history.readAt?.time ?: 0L,
                             ),
                         )
                     }
             }
         }
     }
+
+    // ---------------------------------------------------------------------------
+    // Host (ExtYomi): AniList only suggests; the enabled extensions decide what exists.
+    // ---------------------------------------------------------------------------
+
+    private data class HostSource(val id: Long, val name: String, val kind: String)
+
+    private suspend fun refreshHost(continueList: List<ContinueItem>) {
+        val trendingMedia = safeFeed(true, "TRENDING_DESC") + safeFeed(false, "TRENDING_DESC")
+        val genre = trendingMedia.firstOrNull()?.genres?.firstOrNull()
+        currentHostGenre = genre
+        val recommendedMedia = safeFeed(true, "SCORE_DESC", genre) + safeFeed(false, "SCORE_DESC", genre)
+        val popularMedia = safeFeed(true, "POPULARITY_DESC") + safeFeed(false, "POPULARITY_DESC")
+
+        val sources = hostSources()
+        val (trending, recommended, popular) = coroutineScope {
+            val t = async { validateSuggestions(trendingMedia, sources) }
+            val r = async { validateSuggestions(recommendedMedia, sources) }
+            val p = async { validateSuggestions(popularMedia, sources) }
+            Triple(t.await(), r.await(), p.await())
+        }
+        val recent = loadGlobalRecent(sources)
+        val rows = buildHostRows(sources)
+
+        mutableState.update { state ->
+            state.copy(
+                isLoading = false,
+                isRefreshing = false,
+                trending = trending,
+                recommended = recommended,
+                popular = popular,
+                recent = recent,
+                continueList = continueList.sortedByDescending { it.seenAt },
+                continueVisibleCount = state.itemsPerSection,
+                sortMode = uiPreferences.homeFeedSort().get(),
+                feedRows = rows,
+                sectionPages = mapOf(
+                    SECTION_TRENDING to FeedPagination(1, true),
+                    SECTION_RECOMMENDED to FeedPagination(1, true),
+                    SECTION_POPULAR to FeedPagination(1, true),
+                ) + rows.associate { it.key to FeedPagination(1, it.hasNextPage) },
+            )
+        }
+    }
+
+    /** Installed, enabled sources in the user's own priority order, independent of migration/player. */
+    private fun hostSources(): List<HostSource> {
+        if (isStandalone) return emptyList()
+        val anime = animeSourceManager.getCatalogueSources().map { HostSource(it.id, it.name, KIND_ANIME) }
+        val mangaSources = mangaSourceManager.getCatalogueSources()
+        val manga = mangaSources.filterNot { NovelSourceCompat.isNovelSource(it) }
+            .map { HostSource(it.id, it.name, KIND_MANGA) }
+        val novel = mangaSources.filter { NovelSourceCompat.isNovelSource(it) }
+            .map { HostSource(it.id, it.name, KIND_NOVEL) }
+
+        return HOST_KINDS.flatMap { kind ->
+            val refs = when (kind) {
+                KIND_ANIME -> anime
+                KIND_MANGA -> manga
+                else -> novel
+            }
+            val order = uiPreferences.homeFeedSourceOrder(kind).get()
+                .split(',')
+                .mapNotNull { it.trim().toLongOrNull() }
+            val disabled = uiPreferences.homeFeedDisabledSources(kind).get()
+            refs.filterNot { it.id.toString() in disabled }
+                .sortedBy { ref ->
+                    val index = order.indexOf(ref.id)
+                    if (index < 0) order.size + refs.indexOf(ref) else index
+                }
+        }
+    }
+
+    private fun animeSourceFor(id: Long) = animeSourceManager.get(id) as? AnimeCatalogueSource
+
+    private fun mangaSourceFor(id: Long) = mangaSourceManager.get(id) as? CatalogueSource
+
+    private fun categoryNamesFor(ref: HostSource): List<String> = if (ref.kind == KIND_ANIME) {
+        animeSourceFor(ref.id)?.let(::animeCategoryNames).orEmpty()
+    } else {
+        mangaSourceFor(ref.id)?.let(::mangaCategoryNames).orEmpty()
+    }
+
+    /**
+     * Every AniList card is checked by title against the enabled sources of its own kind. An empty
+     * source list means "no filter configured yet", so suggestions are shown as before instead of
+     * leaving an empty Home.
+     */
+    private suspend fun validateSuggestions(
+        media: List<HomeFeedMedia>,
+        sources: List<HostSource>,
+    ): List<FeedItem> {
+        val unique = media.distinctBy { normalized(it.title) to it.isAnime }
+        if (unique.isEmpty()) return emptyList()
+        if (sources.isEmpty()) return unique.map(::toGlobalFeedItem)
+
+        val semaphore = Semaphore(4)
+        return coroutineScope {
+            unique.map { suggestion ->
+                async {
+                    semaphore.withPermit {
+                        runCatching {
+                            withTimeout(SEARCH_TIMEOUT) {
+                                var matches = false
+                                for (ref in sources) {
+                                    if ((ref.kind == KIND_ANIME) != suggestion.isAnime) continue
+                                    if (matchesTitle(ref, suggestion.title, suggestion.isAnime)) {
+                                        matches = true
+                                        break
+                                    }
+                                }
+                                toGlobalFeedItem(suggestion).copy(
+                                    available = matches,
+                                    contentFormats = HomeFeedFormatMetadata.detect(
+                                        source = null,
+                                        genres = suggestion.genres,
+                                        apiFormat = suggestion.format,
+                                    ),
+                                    episodeCount = suggestion.episodeCount,
+                                    airingAt = suggestion.airingAt,
+                                )
+                            }
+                        }.getOrNull()
+                    }
+                }
+            }.awaitAll().filterNotNull().filter { it.available != false }
+        }
+    }
+
+    private suspend fun matchesTitle(ref: HostSource, title: String, anime: Boolean): Boolean {
+        val target = normalized(title)
+        return if (anime) {
+            val source = animeSourceFor(ref.id) ?: return false
+            source.getSearchAnime(1, title, source.safeFilterList()).animes
+                .any { normalized(it.title) == target }
+        } else {
+            val source = mangaSourceFor(ref.id) ?: return false
+            source.getSearchManga(1, title, source.safeFilterList()).mangas
+                .any { normalized(it.title) == target }
+        }
+    }
+
+    /**
+     * Builds the rows after Recomendados/Populares: alternating anime, manga and novel categories,
+     * each served by the first available source in its own priority order, then the per-source
+     * "de todo lo disponible" rows, then movie/series rows (which have no "de todo" block).
+     */
+    private suspend fun buildHostRows(sources: List<HostSource>): List<FeedRow> {
+        if (sources.isEmpty()) return emptyList()
+
+        val support = mutableMapOf<String, MutableList<HostSource>>()
+        sources.forEach { ref ->
+            categoryNamesFor(ref).forEach { name ->
+                if (!isTrendingName(name) && !isRecentName(name)) {
+                    support.getOrPut(name) { mutableListOf() }.add(ref)
+                }
+            }
+        }
+
+        val blocked = uiPreferences.homeFeedBlockedCategories().get()
+        val savedOrder = uiPreferences.homeFeedCategoryOrder().get()
+            .split(',')
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+        val available = (DEFAULT_HOST_CATEGORIES + support.keys)
+            .distinctBy(::normalized)
+            .filterNot { it in blocked }
+        val orderedCategories = buildList {
+            savedOrder.forEach { saved ->
+                available.firstOrNull { normalized(it) == normalized(saved) }?.let(::add)
+            }
+            available.forEach { name ->
+                if (none { normalized(it) == normalized(name) }) add(name)
+            }
+        }.distinctBy(::normalized)
+        mutableState.update { it.copy(availableCategories = orderedCategories) }
+
+        val used = mutableSetOf<String>()
+        val cursors = HOST_KINDS.associateWith { 0 }.toMutableMap()
+        val rows = mutableListOf<FeedRow>()
+
+        for (index in 0 until MAX_HOST_CATEGORY_ROWS.coerceAtMost(orderedCategories.size)) {
+            val category = orderedCategories[index]
+            val kind = HOST_KINDS[index % HOST_KINDS.size]
+            val refs = sources.filter { it.kind == kind }
+            if (refs.isEmpty()) continue
+            val candidates = support[category]?.filter { it.kind == kind }.orEmpty().ifEmpty { refs }
+
+            var cursor = cursors[kind] ?: 0
+            var chosen: Pair<HostSource, Pair<List<FeedItem>, Boolean>>? = null
+            for (offset in candidates.indices) {
+                val ref = candidates[(cursor + offset) % candidates.size]
+                val page = fetchCategoryPage(ref, category, 1)
+                if (page.first.isNotEmpty()) {
+                    chosen = ref to page
+                    cursor = (candidates.indexOf(ref) + 1) % candidates.size
+                    break
+                }
+            }
+            if (chosen == null) {
+                // No source served the category: fall back to the first one, as requested.
+                val ref = candidates[cursor % candidates.size]
+                chosen = ref to fetchCategoryPage(ref, category, 1)
+                cursor = (cursor + 1) % candidates.size
+            }
+            cursors[kind] = cursor
+
+            val (picked, result) = chosen ?: continue
+            val items = result.first.filterNot { it.rowKey in used }
+                .take(mutableState.value.itemsPerSection)
+            if (items.isEmpty()) continue
+            items.forEach { used += it.rowKey }
+            rows += FeedRow(
+                key = "genre:$kind:${normalized(category)}",
+                kind = kind,
+                category = category,
+                sourceId = picked.id,
+                items = items,
+                hasNextPage = result.second,
+            )
+        }
+
+        // "de todo lo disponible": one row per enabled extension, in priority order.
+        sources.forEach { ref ->
+            val result = fetchPopularPage(ref, 1)
+            val items = result.first.filterNot { it.rowKey in used }
+                .take(mutableState.value.itemsPerSection)
+            if (items.isEmpty()) return@forEach
+            items.forEach { used += it.rowKey }
+            rows += FeedRow(
+                key = "source:${ref.kind}:${ref.id}",
+                kind = ref.kind,
+                sourceId = ref.id,
+                sourceName = ref.name,
+                items = items,
+                hasNextPage = result.second,
+            )
+        }
+
+        // Películas y series: format rows only, deliberately without a "de todo" block.
+        for (kind in HOST_KINDS) {
+            for (format in listOf(ContentFormat.MOVIE, ContentFormat.SERIES)) {
+                val refs = sources.filter { it.kind == kind }
+                if (refs.isEmpty()) continue
+                val categoryName = support.keys.firstOrNull { isFormatName(it, format) }
+                val candidates = if (categoryName == null) {
+                    refs
+                } else {
+                    support[categoryName].orEmpty().filter { it.kind == kind }.ifEmpty { refs }
+                }
+                var picked: HostSource? = null
+                var found = emptyList<FeedItem>()
+                var hasNext = false
+                for (ref in candidates) {
+                    val page = if (categoryName == null) {
+                        fetchPopularPage(ref, 1)
+                    } else {
+                        fetchCategoryPage(ref, categoryName, 1)
+                    }
+                    val matching = page.first.filter { format in it.contentFormats }
+                    if (matching.isNotEmpty()) {
+                        picked = ref
+                        found = matching
+                        hasNext = page.second
+                        break
+                    }
+                }
+                if (picked == null) continue
+                val items = found.filterNot { it.rowKey in used }
+                    .take(mutableState.value.itemsPerSection)
+                if (items.isEmpty()) continue
+                items.forEach { used += it.rowKey }
+                rows += FeedRow(
+                    key = "format:$kind:${format.name}",
+                    kind = kind,
+                    format = format,
+                    sourceId = picked.id,
+                    items = items,
+                    hasNextPage = hasNext,
+                )
+            }
+        }
+        return rows
+    }
+
+    private suspend fun fetchCategoryPage(
+        ref: HostSource,
+        category: String,
+        page: Int,
+    ): Pair<List<FeedItem>, Boolean> = withIOContext {
+        runCatching {
+            withTimeout(PAGE_TIMEOUT) {
+                if (ref.kind == KIND_ANIME) {
+                    val source = animeSourceFor(ref.id)
+                        ?: return@withTimeout emptyList<FeedItem>() to false
+                    val filters = source.safeFilterList()
+                    if (!applyAnimeNamedFilter(filters, category)) {
+                        return@withTimeout emptyList<FeedItem>() to false
+                    }
+                    val result = source.getSearchAnime(page, "", filters)
+                    result.animes.mapNotNull { anime ->
+                        runCatching {
+                            val local = networkToLocalAnime.await(anime.toDomainAnime(ref.id))
+                            anime.toSourceFeedItem(local.id).copy(
+                                contentFormats = HomeFeedFormatMetadata.detect(
+                                    source,
+                                    anime.getGenres().orEmpty(),
+                                    "",
+                                ),
+                            )
+                        }.getOrNull()
+                    } to result.hasNextPage
+                } else {
+                    val source = mangaSourceFor(ref.id)
+                        ?: return@withTimeout emptyList<FeedItem>() to false
+                    val filters = source.safeFilterList()
+                    if (!applyMangaNamedFilter(filters, category)) {
+                        return@withTimeout emptyList<FeedItem>() to false
+                    }
+                    val result = source.getSearchManga(page, "", filters)
+                    result.mangas.mapNotNull { manga ->
+                        runCatching {
+                            val local = networkToLocalManga.await(manga.toDomainManga(ref.id))
+                            manga.toSourceFeedItem(local.id).copy(
+                                contentFormats = HomeFeedFormatMetadata.detect(
+                                    source,
+                                    manga.getGenres().orEmpty(),
+                                    "",
+                                ),
+                            )
+                        }.getOrNull()
+                    } to result.hasNextPage
+                }
+            }
+        }.getOrDefault(emptyList<FeedItem>() to false)
+    }
+
+    private suspend fun fetchPopularPage(
+        ref: HostSource,
+        page: Int,
+    ): Pair<List<FeedItem>, Boolean> = withIOContext {
+        runCatching {
+            withTimeout(PAGE_TIMEOUT) {
+                if (ref.kind == KIND_ANIME) {
+                    val source = animeSourceFor(ref.id)
+                        ?: return@withTimeout emptyList<FeedItem>() to false
+                    val result = source.getPopularAnime(page)
+                    result.animes.mapNotNull { anime ->
+                        runCatching {
+                            val local = networkToLocalAnime.await(anime.toDomainAnime(ref.id))
+                            anime.toSourceFeedItem(local.id).copy(
+                                contentFormats = HomeFeedFormatMetadata.detect(
+                                    source,
+                                    anime.getGenres().orEmpty(),
+                                    "",
+                                ),
+                            )
+                        }.getOrNull()
+                    } to result.hasNextPage
+                } else {
+                    val source = mangaSourceFor(ref.id)
+                        ?: return@withTimeout emptyList<FeedItem>() to false
+                    val result = source.getPopularManga(page)
+                    result.mangas.mapNotNull { manga ->
+                        runCatching {
+                            val local = networkToLocalManga.await(manga.toDomainManga(ref.id))
+                            manga.toSourceFeedItem(local.id).copy(
+                                contentFormats = HomeFeedFormatMetadata.detect(
+                                    source,
+                                    manga.getGenres().orEmpty(),
+                                    "",
+                                ),
+                            )
+                        }.getOrNull()
+                    } to result.hasNextPage
+                }
+            }
+        }.getOrDefault(emptyList<FeedItem>() to false)
+    }
+
+    /** Paginates the global rows without refetching the whole feed. */
+    private fun loadMoreGlobalSection(key: String) {
+        screenModelScope.launchIO {
+            val pagination = mutableState.value.sectionPages[key] ?: FeedPagination(1, true)
+            if (pagination.isLoadingMore || !pagination.hasNextPage) return@launchIO
+            mutableState.update { state ->
+                state.copy(
+                    sectionPages = state.sectionPages + (key to pagination.copy(isLoadingMore = true)),
+                )
+            }
+            val nextPage = pagination.page + 1
+            when {
+                key == SECTION_TRENDING || key == SECTION_RECOMMENDED || key == SECTION_POPULAR -> {
+                    val sort = when (key) {
+                        SECTION_TRENDING -> "TRENDING_DESC"
+                        SECTION_RECOMMENDED -> "SCORE_DESC"
+                        else -> "POPULARITY_DESC"
+                    }
+                    val media = safeFeed(true, sort, currentHostGenre, nextPage) +
+                        safeFeed(false, sort, currentHostGenre, nextPage)
+                    val items = validateSuggestions(media, hostSources())
+                    mutableState.update { state ->
+                        val updated = state.copy(
+                            sectionPages = state.sectionPages + (
+                                key to FeedPagination(nextPage, items.isNotEmpty(), false)
+                                ),
+                        )
+                        when (key) {
+                            SECTION_TRENDING -> updated.copy(trending = appendUnique(updated.trending, items))
+                            SECTION_RECOMMENDED -> updated.copy(
+                                recommended = appendUnique(updated.recommended, items),
+                            )
+                            else -> updated.copy(popular = appendUnique(updated.popular, items))
+                        }
+                    }
+                }
+                else -> {
+                    val row = mutableState.value.feedRows.firstOrNull { it.key == key }
+                        ?: return@launchIO
+                    val ref = hostSources().firstOrNull {
+                        it.id == row.sourceId && it.kind == row.kind
+                    } ?: return@launchIO
+                    val result = when {
+                        key.startsWith("genre:") && row.category != null ->
+                            fetchCategoryPage(ref, row.category, nextPage)
+                        else -> fetchPopularPage(ref, nextPage)
+                    }
+                    mutableState.update { state ->
+                        val fresh = result.first.filterNot { item ->
+                            state.feedRows.any { other ->
+                                other.key != key &&
+                                    other.items.any { it.rowKey == item.rowKey }
+                            }
+                        }
+                        state.copy(
+                            sectionPages = state.sectionPages + (
+                                key to FeedPagination(nextPage, result.second, false)
+                                ),
+                            feedRows = state.feedRows.map { current ->
+                                if (current.key == key) {
+                                    val items = appendUnique(current.items, fresh)
+                                    current.copy(
+                                        items = if (key.startsWith("format:")) {
+                                            items.filter { row.format in it.contentFormats }
+                                        } else {
+                                            items
+                                        },
+                                        hasNextPage = result.second,
+                                    )
+                                } else {
+                                    current
+                                }
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun loadMoreContinue() = mutableState.update { state ->
+        state.copy(continueVisibleCount = state.continueVisibleCount + state.itemsPerSection)
+    }
+
+    fun setSortMode(mode: HomeFeedSort) {
+        uiPreferences.homeFeedSort().set(mode)
+        mutableState.update { it.copy(sortMode = mode) }
+    }
+
+    fun setBlockedCategories(names: Set<String>) {
+        uiPreferences.homeFeedBlockedCategories().set(names)
+        refresh()
+    }
+
+    fun setCategoryOrder(names: List<String>) {
+        uiPreferences.homeFeedCategoryOrder().set(names.joinToString(","))
+        refresh()
+    }
+
+    fun onSourcePreferencesChanged() = refresh()
 
     // ---------------------------------------------------------------------------
     // Standalone: the catalogue of the bundled extension is the source of truth.
@@ -635,6 +1121,10 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
 
     /** Fetches the next page of a Home section without repeating entries already shown. */
     fun loadMoreSection(key: String) {
+        if (!isStandalone) {
+            loadMoreGlobalSection(key)
+            return
+        }
         screenModelScope.launchIO {
             val pagination = mutableState.value.sectionPages[key] ?: FeedPagination()
             if (pagination.isLoadingMore || !pagination.hasNextPage) return@launchIO
@@ -800,6 +1290,12 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
     data class State(
         val isLoading: Boolean = true,
         val isRefreshing: Boolean = false,
+        /** Extra rows generated for the host from categories, sources and content formats. */
+        val feedRows: List<FeedRow> = emptyList(),
+        /** Categories offered by the enabled extensions, after order and block rules. */
+        val availableCategories: List<String> = emptyList(),
+        val continueVisibleCount: Int = 10,
+        val sortMode: HomeFeedSort = HomeFeedSort.NONE,
         val trending: List<FeedItem> = emptyList(),
         val recommended: List<FeedItem> = emptyList(),
         val popular: List<FeedItem> = emptyList(),
@@ -841,6 +1337,20 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
         val isLoadingMore: Boolean = false,
     )
 
+    /** One generated horizontal row of the host feed. The UI builds its title from these fields. */
+    @Immutable
+    data class FeedRow(
+        val key: String,
+        val kind: String,
+        val category: String? = null,
+        val format: ContentFormat? = null,
+        val sourceId: Long? = null,
+        val sourceName: String? = null,
+        val items: List<FeedItem> = emptyList(),
+        val hasNextPage: Boolean = false,
+        val isLoadingMore: Boolean = false,
+    )
+
     @Immutable
     data class FeedItem(
         val id: Long,
@@ -855,6 +1365,10 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
         val available: Boolean? = null,
         /** Local database id of the real extension entry; used to open its detail screen. */
         val localId: Long? = null,
+        /** Optional format metadata used by the Películas/Series rows and the Ordenar tab. */
+        val contentFormats: Set<ContentFormat> = emptySet(),
+        val episodeCount: Int? = null,
+        val airingAt: Long? = null,
     )
 
     @Immutable
@@ -867,6 +1381,8 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
         val coverUrl: String?,
         val isAnime: Boolean,
         val isNovel: Boolean,
+        /** Timestamp used to merge anime, manga and novel into one recency-ordered row. */
+        val seenAt: Long = 0L,
     )
 
     companion object {
@@ -875,7 +1391,30 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
         const val SECTION_RECENT = "recent"
         const val SECTION_POPULAR = "popular"
         const val SECTION_FILTERED = "filtered"
+        const val SECTION_RECOMMENDED = "recommended"
         const val CATEGORY_PREFIX = "category:"
+
+        const val KIND_ANIME = "anime"
+        const val KIND_MANGA = "manga"
+        const val KIND_NOVEL = "novel"
+        val HOST_KINDS = listOf(KIND_ANIME, KIND_MANGA, KIND_NOVEL)
+
+        /** Defaults from the filter dialog; extension categories are appended after them. */
+        val DEFAULT_HOST_CATEGORIES = listOf(
+            "Acción",
+            "Aventura",
+            "Comedia",
+            "Terror",
+            "Ciencia ficción",
+            "Romance",
+            "Drama",
+            "Fantasía",
+            "Suspenso",
+        )
+
+        // A bounded number of generated rows keeps a first feed refresh from hammering every source.
+        const val MAX_HOST_CATEGORY_ROWS = 12
+        const val MAX_HOST_CONTINUE_ENTRIES = 60
 
         fun categoryKey(name: String) = CATEGORY_PREFIX + name
 
@@ -887,6 +1426,17 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
         const val MAX_RECENT_SOURCES = 3
         const val RECENT_PER_SOURCE = 8
     }
+}
+
+private val StandaloneFeedScreenModel.FeedItem.rowKey: String
+    get() = "$isAnime-${localId ?: id}"
+
+private fun isFormatName(name: String, format: ContentFormat): Boolean = when (format) {
+    ContentFormat.MOVIE -> name.contains("pelicula", ignoreCase = true) ||
+        name.contains("movie", ignoreCase = true)
+    ContentFormat.SERIES -> name.contains("serie", ignoreCase = true) ||
+        name.equals("TV", ignoreCase = true)
+    else -> false
 }
 
 private fun SAnime.toSourceFeedItem(localId: Long) = StandaloneFeedScreenModel.FeedItem(
