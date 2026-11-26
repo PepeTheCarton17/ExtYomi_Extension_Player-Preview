@@ -35,6 +35,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -71,6 +72,7 @@ import eu.kanade.presentation.more.settings.screen.browse.MangaExtensionReposScr
 import eu.kanade.presentation.more.settings.screen.data.RestoreBackupScreen
 import eu.kanade.presentation.util.AssistContentScreen
 import eu.kanade.presentation.util.DefaultNavigatorScreenTransition
+import eu.kanade.presentation.util.LocalNavigateUp
 import eu.kanade.tachiyomi.BuildConfig
 import eu.kanade.tachiyomi.animesource.model.Hoster
 import eu.kanade.tachiyomi.animesource.model.Video
@@ -223,36 +225,48 @@ class MainActivity : BaseActivity() {
                 }
 
                 val scaffoldInsets = WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal)
-                Scaffold(
-                    topBar = {
-                        AppStateBanners(
-                            downloadedOnlyMode = downloadOnly,
-                            incognitoMode = incognito || incognitoAnime,
-                            indexing = indexing || indexingAnime,
-                            modifier = Modifier.windowInsetsPadding(scaffoldInsets),
-                        )
+                // Provide one contextual back action to every screen. Pushed screens pop the root
+                // navigator; tab-level changes fall back to HomeScreen's real tab history.
+                CompositionLocalProvider(
+                    LocalNavigateUp provides {
+                        if (navigator.canPop) {
+                            navigator.pop()
+                        } else {
+                            HomeScreen.navigateUp()
+                        }
                     },
-                    contentWindowInsets = scaffoldInsets,
-                ) { contentPadding ->
-                    // Consume insets already used by app state banners
-                    Box {
-                        // Shows current screen
-                        DefaultNavigatorScreenTransition(
-                            navigator = navigator,
-                            modifier = Modifier
-                                .padding(contentPadding)
-                                .consumeWindowInsets(contentPadding),
-                        )
-                        // Draw navigation bar scrim when needed
-                        if (remember { isNavigationBarNeedsScrim() }) {
-                            Spacer(
-                                modifier = Modifier
-                                    .align(Alignment.BottomCenter)
-                                    .fillMaxWidth()
-                                    .windowInsetsBottomHeight(WindowInsets.navigationBars)
-                                    .alpha(0.8f)
-                                    .background(MaterialTheme.colorScheme.surfaceContainer),
+                ) {
+                    Scaffold(
+                        topBar = {
+                            AppStateBanners(
+                                downloadedOnlyMode = downloadOnly,
+                                incognitoMode = incognito || incognitoAnime,
+                                indexing = indexing || indexingAnime,
+                                modifier = Modifier.windowInsetsPadding(scaffoldInsets),
                             )
+                        },
+                        contentWindowInsets = scaffoldInsets,
+                    ) { contentPadding ->
+                        // Consume insets already used by app state banners
+                        Box {
+                            // Shows current screen
+                            DefaultNavigatorScreenTransition(
+                                navigator = navigator,
+                                modifier = Modifier
+                                    .padding(contentPadding)
+                                    .consumeWindowInsets(contentPadding),
+                            )
+                            // Draw navigation bar scrim when needed
+                            if (remember { isNavigationBarNeedsScrim() }) {
+                                Spacer(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomCenter)
+                                        .fillMaxWidth()
+                                        .windowInsetsBottomHeight(WindowInsets.navigationBars)
+                                        .alpha(0.8f)
+                                        .background(MaterialTheme.colorScheme.surfaceContainer),
+                                )
+                            }
                         }
                     }
                 }
