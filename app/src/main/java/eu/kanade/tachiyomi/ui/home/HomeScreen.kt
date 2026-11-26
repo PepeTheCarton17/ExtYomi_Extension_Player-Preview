@@ -99,6 +99,7 @@ import tachiyomi.presentation.core.util.collectAsState
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import uy.kohesive.injekt.injectLazy
+import cafe.adriel.voyager.navigator.tab.Tab as VoyagerTab
 
 /** Scale factor applied to the navigation bar icons (1f = default), set from Appearance settings. */
 private val LocalNavBarIconScale = compositionLocalOf { 1f }
@@ -115,6 +116,11 @@ object HomeScreen : Screen() {
     private val openTabEvent = Channel<Tab>()
     private val showBottomNavEvent = Channel<Boolean>()
     private val navigateUpEvent = Channel<Unit>(Channel.CONFLATED)
+
+    // Kept at object scope: a pushed screen disposes HomeScreen, and returning to it must restore
+    // the tab the user actually left instead of resetting to the start screen.
+    private val tabHistory = mutableStateListOf<VoyagerTab>()
+    private var activeTab: VoyagerTab? = null
 
     private const val TAB_FADE_DURATION = 200
     private const val TAB_NAVIGATOR_KEY = "HomeTabs"
@@ -197,14 +203,20 @@ object HomeScreen : Screen() {
         val navigator = LocalNavigator.currentOrThrow
         // Keep a real history of tab changes so back returns to the panel the user actually left.
         // Root-level screens opened with navigator.push() keep using Voyager's own back stack.
-        val tabHistory = remember { mutableStateListOf(homeTab) }
+        if (tabHistory.isEmpty()) {
+            tabHistory.add(homeTab)
+        }
+        val initialTab = activeTab?.takeIf { tab ->
+            shownTabs.any { it == tab } || hiddenTabs.any { it == tab }
+        } ?: homeTab
         TabNavigator(
-            tab = homeTab,
+            tab = initialTab,
             key = TAB_NAVIGATOR_KEY,
         ) { tabNavigator ->
             // Track every tab change: bottom bar, More, deep link or start-screen preference.
             LaunchedEffect(tabNavigator.current) {
                 val current = tabNavigator.current
+                activeTab = current
                 if (tabHistory.lastOrNull() != current) {
                     tabHistory.add(current)
                 }
