@@ -385,7 +385,7 @@ fun StandaloneLocalHomeFeedScreen(
                                         contentPadding = PaddingValues(horizontal = 16.dp),
                                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                                     ) {
-                                        items(items = state.continueList, key = { "continue-${it.id}" }) { entry ->
+                                        items(items = state.continueList, key = { it.feedKey() }) { entry ->
                                             ContinueCardLocal(entry) {
                                                 if (entry.isAnime) {
                                                     navigator.push(AnimeScreen(entry.id, true))
