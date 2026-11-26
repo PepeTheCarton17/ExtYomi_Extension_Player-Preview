@@ -403,7 +403,7 @@ fun StandaloneHomeFeedScreen(
                                     contentPadding = PaddingValues(horizontal = 16.dp),
                                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 ) {
-                                    items(items = visible.continueList, key = { "continue-${it.id}" }) { item ->
+                                    items(items = visible.continueList, key = { it.feedKey() }) { item ->
                                         ContinueCard(item, onClick = { onContinueClick(item) })
                                     }
                                     if (state.continueList.count { it.matches(selectedFormat) } >
