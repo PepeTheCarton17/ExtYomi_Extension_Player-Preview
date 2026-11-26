@@ -42,9 +42,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -221,10 +223,14 @@ object HomeScreen : Screen() {
                     tabHistory.add(current)
                 }
             }
-            // The start-screen preference is now live: switching it moves the tab navigator
-            // immediately instead of only taking effect after a restart.
+            // Apply a live start-screen preference change only while this composition is alive.
+            // On re-entry (after popping a pushed screen) the remembered value starts null, so the
+            // restored tab is left untouched instead of being reset to Anime/Home.
+            var previousHomeTab by remember { mutableStateOf<VoyagerTab?>(null) }
             LaunchedEffect(homeTab) {
-                if (tabNavigator.current != homeTab) {
+                val previous = previousHomeTab
+                previousHomeTab = homeTab
+                if (previous != null && previous != homeTab && tabNavigator.current != homeTab) {
                     if (tabHistory.lastOrNull() != homeTab) {
                         tabHistory.add(homeTab)
                     }
