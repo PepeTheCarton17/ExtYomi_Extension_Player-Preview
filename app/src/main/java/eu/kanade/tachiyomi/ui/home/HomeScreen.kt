@@ -41,11 +41,10 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -70,7 +69,6 @@ import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.domain.ui.model.NavBarLabelMode
 import eu.kanade.domain.ui.model.NavTab
 import eu.kanade.domain.ui.model.StandaloneHomeMode
-import eu.kanade.presentation.util.LocalNavigateUp
 import eu.kanade.presentation.util.Screen
 import eu.kanade.presentation.util.isTabletUi
 import eu.kanade.tachiyomi.ui.browse.BrowseTab
@@ -101,6 +99,7 @@ import tachiyomi.presentation.core.util.collectAsState
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import uy.kohesive.injekt.injectLazy
+import cafe.adriel.voyager.navigator.tab.Tab as VoyagerTab
 
 /** Scale factor applied to the navigation bar icons (1f = default), set from Appearance settings. */
 private val LocalNavBarIconScale = compositionLocalOf { 1f }
@@ -116,6 +115,12 @@ object HomeScreen : Screen() {
     private val librarySearchEvent = Channel<String>()
     private val openTabEvent = Channel<Tab>()
     private val showBottomNavEvent = Channel<Boolean>()
+    private val navigateUpEvent = Channel<Unit>(Channel.CONFLATED)
+
+    // Kept at object scope: a pushed screen disposes HomeScreen, and returning to it must restore
+    // the tab the user actually left instead of resetting to the start screen.
+    private val tabHistory = mutableStateListOf<VoyagerTab>()
+    private var activeTab: VoyagerTab? = null
 
     private const val TAB_FADE_DURATION = 200
     private const val TAB_NAVIGATOR_KEY = "HomeTabs"
@@ -196,51 +201,53 @@ object HomeScreen : Screen() {
         val hazeState = remember { HazeState() }
         val navBarBlurActive = floatingNavBar && floatingNavBarBlur > 0
         val navigator = LocalNavigator.currentOrThrow
-        // Remember the tab the user left when a hidden tab or a deep link takes over, so the
-        // back arrow can return there instead of jumping to a hard-coded destination.
-        var previousTabKey by remember { mutableStateOf<String?>(null) }
-        var lastTabKey by remember { mutableStateOf<String?>(null) }
+        // Keep a real history of tab changes so back returns to the panel the user actually left.
+        // Root-level screens opened with navigator.push() keep using Voyager's own back stack.
+        if (tabHistory.isEmpty()) {
+            tabHistory.add(homeTab)
+        }
+        val initialTab = activeTab?.takeIf { tab ->
+            shownTabs.any { it == tab } || hiddenTabs.any { it == tab }
+        } ?: homeTab
         TabNavigator(
-            tab = homeTab,
+            tab = initialTab,
             key = TAB_NAVIGATOR_KEY,
         ) { tabNavigator ->
-            // Track every tab change (bottom bar, More or deep link), not just openTabEvent,
-            // so "back" always has the tab the user actually left.
-            LaunchedEffect(tabNavigator.current.key) {
-                val currentKey = tabNavigator.current.key
-                val previous = lastTabKey
-                if (previous != null && previous != currentKey) {
-                    previousTabKey = previous
+            // Track every tab change: bottom bar, More, deep link or start-screen preference.
+            LaunchedEffect(tabNavigator.current) {
+                val current = tabNavigator.current
+                activeTab = current
+                if (tabHistory.lastOrNull() != current) {
+                    tabHistory.add(current)
                 }
-                lastTabKey = currentKey
             }
             // The start-screen preference is now live: switching it moves the tab navigator
             // immediately instead of only taking effect after a restart.
             LaunchedEffect(homeTab) {
                 if (tabNavigator.current != homeTab) {
-                    previousTabKey = tabNavigator.current.key
+                    if (tabHistory.lastOrNull() != homeTab) {
+                        tabHistory.add(homeTab)
+                    }
                     tabNavigator.current = homeTab
                 }
             }
-            val navigateUp: () -> Unit = {
-                if (navigator.canPop) {
-                    navigator.pop()
-                } else {
-                    val target = previousTabKey?.let { key ->
-                        shownTabs.find { it.key == key }
-                    } ?: homeTab
+            val navigateUpTab: () -> Unit = {
+                if (tabHistory.size > 1) {
+                    tabHistory.removeAt(tabHistory.lastIndex)
+                    val target = tabHistory.last()
                     if (tabNavigator.current != target) {
                         tabNavigator.current = target
                     }
-                    previousTabKey = null
-                    lastTabKey = target.key
                 }
             }
-            // Provide usable navigator and the shared back action to content screens.
-            CompositionLocalProvider(
-                LocalNavigator provides navigator,
-                LocalNavigateUp provides navigateUp,
-            ) {
+            LaunchedEffect(Unit) {
+                navigateUpEvent.receiveAsFlow().collectLatest {
+                    navigateUpTab()
+                }
+            }
+            // Restore the root navigator for tab content. LocalNavigateUp is provided globally by
+            // MainActivity so pushed screens and tab screens share the same contextual back action.
+            CompositionLocalProvider(LocalNavigator provides navigator) {
                 Scaffold(
                     startBar = {
                         // Side rail only in classic (non-floating) mode on wide screens. With the
@@ -409,8 +416,8 @@ object HomeScreen : Screen() {
             val goToStartScreen = { tabNavigator.current = homeTab }
             // Voyager already pops the root navigator when it can; only handle the tab level here.
             BackHandler(
-                enabled = !navigator.canPop && tabNavigator.current != homeTab,
-                onBack = navigateUp,
+                enabled = !navigator.canPop && tabHistory.size > 1,
+                onBack = navigateUpTab,
             )
 
             LaunchedEffect(Unit) {
@@ -453,7 +460,6 @@ object HomeScreen : Screen() {
                             is Tab.More -> MoreTab
                         }
                         if (tabNavigator.current != target) {
-                            previousTabKey = tabNavigator.current.key
                             tabNavigator.current = target
                         }
 
@@ -693,6 +699,11 @@ object HomeScreen : Screen() {
 
     suspend fun showBottomNav(show: Boolean) {
         showBottomNavEvent.send(show)
+    }
+
+    /** Requests a contextual back from the root navigator; falls back to the tab history. */
+    fun navigateUp() {
+        navigateUpEvent.trySend(Unit)
     }
 
     sealed interface Tab {
