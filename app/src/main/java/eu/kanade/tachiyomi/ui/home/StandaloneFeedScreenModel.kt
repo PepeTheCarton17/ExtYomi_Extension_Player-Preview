@@ -1428,6 +1428,20 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
     }
 }
 
+/**
+ * Anime and manga/novel database ids come from separate tables and can collide (both can be 1).
+ * History can also contain several episodes/chapters of the same entry, so the row key needs the
+ * kind and the concrete episode/chapter as well as the entry id.
+ */
+internal fun StandaloneFeedScreenModel.ContinueItem.feedKey(): String {
+    val kind = when {
+        isAnime -> "anime"
+        isNovel -> "novel"
+        else -> "manga"
+    }
+    return "continue-$kind-$id-${episodeId ?: chapterId ?: 0L}"
+}
+
 private val StandaloneFeedScreenModel.FeedItem.rowKey: String
     get() = "$isAnime-${localId ?: id}"
 
