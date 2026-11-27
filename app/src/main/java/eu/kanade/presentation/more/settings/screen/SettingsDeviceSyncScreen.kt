@@ -82,12 +82,20 @@ object SettingsDeviceSyncScreen : SearchableSettings {
             state.phase == DeviceSyncPhase.HOST_PASSWORD_READY ||
             (state.phase == DeviceSyncPhase.PAIRED && state.passwordVisible)
         val showInvite = isHost && state.code.length == 8 && state.endpoint.isNotBlank()
-        val pairingQr = remember(showInvite, state.code, state.endpoint, state.endpoints, state.relayUrl) {
+        val pairingQr = remember(
+            showInvite,
+            state.code,
+            state.deviceId,
+            state.endpoint,
+            state.endpoints,
+            state.relayUrl,
+        ) {
             if (!showInvite) {
                 null
             } else {
                 DevicePairingQr(
                     code = state.code,
+                    deviceId = state.deviceId,
                     name = Build.MODEL,
                     model = Build.MODEL,
                     endpoint = state.endpoint,
@@ -186,11 +194,24 @@ object SettingsDeviceSyncScreen : SearchableSettings {
                             modifier = Modifier.fillMaxWidth(),
                         )
                         Text(stringResource(MR.strings.device_sync_relay_hint))
+                        if (state.natHint) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                stringResource(
+                                    if (isHost) {
+                                        MR.strings.device_sync_wsa_host_hint
+                                    } else {
+                                        MR.strings.device_sync_wsa_join_hint
+                                    },
+                                ),
+                            )
+                        }
                         Spacer(Modifier.height(8.dp))
 
                         Button(
                             onClick = { scope.launch { DeviceSyncEngine.startHost(context, relay) } },
-                            enabled = !pairingBusy,
+                            // WSA/emulators cannot accept an inbound connection from the LAN.
+                            enabled = !pairingBusy && !state.natHint,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Text(stringResource(MR.strings.device_sync_host_start))
@@ -247,18 +268,11 @@ object SettingsDeviceSyncScreen : SearchableSettings {
                             } else if (state.phase == DeviceSyncPhase.HOST_WAITING) {
                                 Text(stringResource(MR.strings.device_sync_waiting_code))
                             }
+                            // The secret lives on this device; never gate it on an inbound
+                            // CODE_CONFIRM, which cannot arrive through WSA/NAT.
                             if (state.passwordVisible) {
                                 Text(stringResource(MR.strings.device_sync_reveal_password))
                                 Text(DevicePairing.formatCode(state.password))
-                            } else {
-                                // The CODE_CONFIRM notification is best effort; always give the
-                                // user a way to reveal the password when it never arrives.
-                                OutlinedButton(
-                                    onClick = { DeviceSyncEngine.revealPassword() },
-                                    modifier = Modifier.fillMaxWidth(),
-                                ) {
-                                    Text(stringResource(MR.strings.device_sync_show_password))
-                                }
                             }
                         }
 

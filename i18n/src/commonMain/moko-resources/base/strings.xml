@@ -706,7 +706,7 @@
     <string name="device_sync_join_qr">Scan QR code</string>
     <string name="device_sync_join_manual">Pair manually</string>
     <string name="device_sync_code">Session code (8 digits)</string>
-    <string name="device_sync_password">Password (10 letters or digits)</string>
+    <string name="device_sync_password">Password</string>
     <string name="device_sync_confirm_devices">Confirm selected devices</string>
     <string name="device_sync_reveal_password">Password for the second device</string>
     <string name="device_sync_waiting_code">Waiting for the other device to confirm the code</string>
@@ -734,6 +734,8 @@
     <string name="device_sync_show_password">Show password</string>
     <string name="device_sync_relay_hint">Included in the link; the other device does not need to configure it.</string>
     <string name="device_sync_bad_invite">Invalid link or code.</string>
+    <string name="device_sync_wsa_host_hint">This device is behind NAT (Windows Subsystem for Android/emulator), so the other device cannot connect here. Publish from the phone instead and scan its QR here. Replies are collected automatically.</string>
+    <string name="device_sync_wsa_join_hint">This device is behind NAT (Windows Subsystem for Android/emulator). Keep this screen open: confirmations and sync replies are collected automatically over this connection.</string>
 
       <!-- Advanced section -->
     <string name="label_network">Networking</string>

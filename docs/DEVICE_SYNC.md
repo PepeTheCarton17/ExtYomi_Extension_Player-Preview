@@ -34,28 +34,42 @@ automáticamente. El propio interruptor es local a cada dispositivo.
 2. En B, escanea ese QR (hay un botón **Escanear QR**) o pega el enlace en el único campo
    **Pega el enlace o el código de 8 dígitos** y pulsa **Unirse**. También funciona un código suelto
    de 8 dígitos si ambos dispositivos están en la misma LAN.
-3. El enlace/QR incluye **todas** las direcciones LAN de A (Wi‑Fi, hotspot, VPN…), no solo una. B
-   envía la confirmación al relay si hay uno y, si no, la intenta contra cada dirección hasta que
-   una responde; solo si todas fallan usa el broadcast UDP como última chance y avisa con
-   **No se pudo contactar con el otro dispositivo…**. Reintenta cada 3 s. A confirma automáticamente
-   al primer dispositivo, le muestra a B el mensaje **Código confirmado** y revela su contraseña
-   aleatoria de **10 letras o números**. Si se unen más dispositivos, A puede seleccionar cuáles
-   confirmar antes de mostrar la contraseña.
-4. **Si el mensaje de confirmación no llega** (redes distintas, endpoint inalcanzable, A sigue
-   «Esperando a que el otro dispositivo confirme el código»), pulsa **Mostrar contraseña** en A.
-   Es un botón manual porque el aviso de confirmación es «best effort» y puede perderse. B muestra
-   mientras tanto **Esperando a que el primer dispositivo confirme**.
+3. El enlace/QR incluye **todas** las direcciones LAN de A (Wi-Fi, hotspot, VPN…) y el id de A, no
+   solo una dirección. B envía el `CODE_CONFIRM` al relay si hay uno y, si no, lo intenta contra
+   cada dirección hasta que una responde; solo si todas fallan usa el broadcast UDP como última
+   chance. Reintenta cada 3 s.
+4. A **muestra la contraseña desde el primer momento**, sin esperar a que llegue ninguna
+   confirmación: el secreto ya está en A y condicionarlo a un mensaje entrante creaba un bloqueo
+   mutuo. El `CONFIRM` sigue enviándose como cortesía, pero no es obligatorio.
 5. En B, escribe esa contraseña (acepta letras y números; no hay 0, 1, I ni O) y pulsa el botón de
    contraseña. El **VERIFY cifrado también se reintenta** contra todas las direcciones mientras
-   B espera, de modo que un primer envío fallido no deja la contraseña manual sin efecto. Quedan
-   vinculados: para A basta con que el mensaje cifrado se descifre con el código y la contraseña,
-   así que no hace falta que haya recibido la confirmación previa. Por eso A «detecta» el dispositivo
-   en cuanto B envía la contraseña correcta.
+   B espera, de modo que un primer envío fallido no deja la contraseña manual sin efecto. B pasa a
+   **vinculado en cuanto el VERIFY se entrega**: la prueba es que A pueda descifrarlo con el código
+   y la contraseña, no que llegue un `CONFIRM` o un `VERIFY_ACK` posterior.
+
+## WSA / emuladores (sin configurar nada)
+
+Windows Subsystem for Android comparte la IP del PC y **no publica su propio puerto en la LAN**: el
+teléfono no puede iniciar una conexión hacia la app dentro de WSA (y el multicast UDP está roto en
+WSA). Por eso, si uno de los dos dispositivos es WSA/emulador:
+
+- **Publica desde el teléfono** y escanea ese QR desde WSA. La app detecta WSA y desactiva
+  «Publicar este dispositivo» allí, con una explicación en pantalla.
+- El `CODE_CONFIRM` y el `VERIFY` salen de WSA hacia el teléfono, que sí son conexiones permitidas.
+- El teléfono no puede responder directamente a WSA, así que encola `CONFIRM`, `VERIFY_ACK`, `ACK`
+  y `EVENTS` como **ciphertext** en su buzón. WSA los recoge con un `POST /poll` periódico por la
+  misma conexión saliente. No hay relay que configurar ni puertos que abrir.
+
+La cola está en memoria, se clavea por id de dispositivo, se deduplica, caduca a los 5 minutos y
+solo se borra cuando el receptor confirma los ids recibidos en el siguiente `/poll`. Si WSA se
+quedara como anfitrión, el teléfono no podría llegar a él: por eso la inversión de roles es
+obligatoria, no opcional.
 
 ## Relay (redes distintas)
 
-Si A y B no comparten red, escribe en A la URL de un relay accesible en el campo **Servidor relay**;
-el enlace que muestra A ya la incluye y B no tiene que configurar nada. Se incluye uno mínimo en
+Es un campo **opcional**: el emparejamiento LAN normal y el caso WSA no lo necesitan. Si A y B no
+comparten red, escribe en A la URL de un relay accesible en el campo **Servidor relay**; el enlace
+que muestra A ya la incluye y B no tiene que configurar nada. Se incluye uno mínimo en
 `tools/device-sync-relay/server.py`:
 
 ```bash
@@ -63,8 +77,7 @@ python3 tools/device-sync-relay/server.py --port 8789
 ```
 
 El campo debe valer `http://<host>:8789`. El relay solo ve ciphertext: no puede leer la
-biblioteca ni la contraseña. Sin relay, el emparejamiento directo requiere que ambos dispositivos
-puedan alcanzarse por la LAN (o que el endpoint publicado sea accesible).
+biblioteca ni la contraseña.
 
 ## Cifrado y borrado por ACK
 

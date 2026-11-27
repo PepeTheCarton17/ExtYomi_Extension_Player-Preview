@@ -1,5 +1,8 @@
 package eu.kanade.tachiyomi.util.devicesync
 
+import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -238,6 +241,69 @@ class DeviceSyncFoundationTest {
         )
 
         assertEquals("date", DeviceSyncMerge.merge(current, incoming).filters.single().value)
+    }
+
+    @Test
+    fun `qr carries the host id so the joiner can pair optimistically`() {
+        val qr = DevicePairingQr(
+            code = "12345678",
+            deviceId = "host-device-id",
+            name = "Phone",
+            endpoint = "192.168.1.10:8787",
+        )
+
+        val decoded = DevicePairing.decodeQr(DevicePairing.encodeQr(qr))
+        assertEquals("host-device-id", decoded?.deviceId)
+        assertEquals(qr, decoded)
+        // Old invites stay readable.
+        assertEquals("", DevicePairingQr(code = "12345678").deviceId)
+    }
+
+    @Test
+    fun `virtual android is detected without treating a phone as one`() {
+        assertTrue(DeviceSyncNat.isVirtualAndroid("Microsoft", "Subsystem for Android", ""))
+        assertTrue(DeviceSyncNat.isVirtualAndroid("unknown", "WSA", "Microsoft"))
+        assertFalse(DeviceSyncNat.isVirtualAndroid("Google", "Pixel 8", "google"))
+    }
+
+    @Test
+    fun `poll request and response survive serialization`() {
+        val request = DevicePollRequest("joiner", listOf("a", "b"))
+        assertEquals(
+            request,
+            deviceSyncJson.decodeFromString<DevicePollRequest>(deviceSyncJson.encodeToString(request)),
+        )
+
+        val response = DevicePollResponse(
+            listOf(DeviceQueuedMessage("id", "/sync", "ciphertext", 42L)),
+        )
+        assertEquals(
+            response,
+            deviceSyncJson.decodeFromString<DevicePollResponse>(deviceSyncJson.encodeToString(response)),
+        )
+    }
+
+    @Test
+    fun `queued ciphertext is delivered once and removed after acknowledgement`() = runTest {
+        val host = DeviceSyncTransport()
+        val client = DeviceSyncTransport()
+        host.start()
+        try {
+            // Same dedupe key, different body: only the first reply is kept.
+            host.enqueueReply("joiner", "/sync", "first-ciphertext", "VERIFY_ACK:host:joiner")
+            host.enqueueReply("joiner", "/sync", "second-ciphertext", "VERIFY_ACK:host:joiner")
+
+            val first = client.poll(host.endpoint, "joiner").getOrThrow()
+            assertEquals(1, first.size)
+            assertEquals("/sync", first.single().path)
+            assertEquals("first-ciphertext", first.single().body)
+
+            val acknowledged = client.poll(host.endpoint, "joiner", listOf(first.single().id)).getOrThrow()
+            assertTrue(acknowledged.isEmpty())
+        } finally {
+            host.stop()
+            client.stop()
+        }
     }
 
     private fun entry(
