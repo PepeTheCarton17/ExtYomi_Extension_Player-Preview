@@ -143,7 +143,7 @@ class DeviceSyncStore(context: Context) {
         }
     }
 
-    suspend fun inboxBatch(maxEvents: Int): List<DeviceIncomingEvent> = withLock {
+    internal suspend fun inboxBatch(maxEvents: Int): List<DeviceIncomingEvent> = withLock {
         inbox.listFiles { file -> file.extension == "json" }
             .orEmpty()
             .sortedBy { it.lastModified() }
