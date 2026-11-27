@@ -92,7 +92,7 @@ object DeviceQrScannerScreen : Screen {
                 Modifier
                     .fillMaxSize()
                     .navigationBarsPadding()
-                    .padding(ButtonPadding),
+                    .padding(16.dp),
             ) {
                 Button(onClick = { launcher.launch(Manifest.permission.CAMERA) }) {
                     Text(stringResource(MR.strings.device_sync_camera_permission))
@@ -159,7 +159,7 @@ object DeviceQrScannerScreen : Screen {
             AndroidView({ previewView }, modifier = Modifier.fillMaxSize())
             Box(
                 modifier = Modifier
-                    .size(ScanFrameSize)
+                    .size(260.dp)
                     .align(Alignment.Center)
                     .border(BorderStroke(2.dp, Color.White), RoundedCornerShape(12.dp)),
             )
@@ -168,7 +168,7 @@ object DeviceQrScannerScreen : Screen {
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .navigationBarsPadding()
-                    .padding(ButtonPadding),
+                    .padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(stringResource(MR.strings.device_sync_scan_hint))
@@ -255,10 +255,5 @@ object DeviceQrScannerScreen : Screen {
         }
         180 -> Triple(data.reversedArray(), width, height)
         else -> Triple(data, width, height)
-    }
-
-    private companion object {
-        val ButtonPadding = 16.dp
-        val ScanFrameSize = 260.dp
     }
 }
