@@ -102,8 +102,11 @@ botón de sincronizar aparece en la barra de biblioteca tanto en ExtYomi como en
 - La sincronización es **automática y bidireccional**: ExtYomi hace `pull` de la standalone, fusiona
   con su propia base de datos, aplica el resultado y hace `push` de vuelta. La standalone también
   puede iniciarla con el botón de la biblioteca. El interruptor **Sincronización automática con
-  standalone** está en el panel **Filtrar** del Home de ambas apps; cada foreground y cada minuto
-  se intenta una sincronización (con un debounce de 20 s).
+  standalone** está en el panel **Filtrar** del Home de ambas apps. Los cambios de biblioteca o
+  categorías disparan una sincronización en cuanto ocurren (agrupando ráfagas de ~350 ms); el
+  foreground y un ciclo de reserva de 30 s solo sirven como respaldo. Las apps generadas con una
+  versión anterior siguen con su ciclo antiguo: regenera la standalone para que los cambios hechos
+  dentro de ella también lleguen al instante.
 - Se sincroniza únicamente el ámbito de la app (un `sourceId` y un tipo). Nada de lo que pertenezca
   a otra fuente se toca en ninguno de los dos sentidos. Las apps generadas con versiones anteriores
   no tienen `instanceId` ni los métodos `pullLocal`/`pushLocal`: hay que regenerarlas desde ExtYomi
