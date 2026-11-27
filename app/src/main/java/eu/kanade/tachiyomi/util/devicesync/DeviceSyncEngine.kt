@@ -80,7 +80,6 @@ object DeviceSyncEngine {
     private var store: DeviceSyncStore? = null
     private var key: SecretKeySpec? = null
     private var config = DeviceSyncConfig()
-    private var isHost = false
     private var joinTarget: DevicePairingMessage? = null
     private var joinEndpoints: List<String> = emptyList()
     private var pendingVerify: DeviceSyncMessage? = null
@@ -88,6 +87,7 @@ object DeviceSyncEngine {
     private var confirmedCandidates: Set<String> = emptySet()
     private var backgroundJobs: List<Job> = emptyList()
     private var pollJob: Job? = null
+    private var relayJob: Job? = null
     private var syncJob: Job? = null
     private var seq = 0L
     private var collector: Job? = null
@@ -113,25 +113,23 @@ object DeviceSyncEngine {
             incomingPending = requireStore().inboxCount(),
             error = null,
         )
-        // After a restart we are neither host nor joiner. The password is stored only on this
-        // device, so derive the key again and restart the transport; otherwise both outboxes
-        // stay frozen forever because syncNow() exits on a null key.
+        // The password is stored only on this device. Derive the key again after a restart;
+        // otherwise every message is dropped because the envelope cannot be decrypted.
         if (key == null && config.password.isNotBlank() && config.code.isNotBlank()) {
             key = DeviceSyncCrypto.deriveKey(config.code, config.password)
-            if (isHost) {
-                _state.value = _state.value.copy(
-                    password = config.password,
-                    passwordVisible = true,
-                    phase = DeviceSyncPhase.HOST_PASSWORD_READY,
-                )
-            }
         }
-        // ACKs and host replies may still be waiting in the other device's mailbox. Keep
-        // collecting and draining them automatically after a restart.
-        if (config.peers.isNotEmpty()) {
+        // A paired device stays paired across restarts. Never leave it in IDLE: the periodic
+        // drain/sync loop used to require PAIRED, so both outboxes froze until the user re-paired.
+        if (config.peers.isNotEmpty() && key != null) {
+            _state.value = _state.value.copy(phase = DeviceSyncPhase.PAIRED)
+        }
+        // Keep the connection alive without opening the settings screen. Both devices poll the
+        // relay and each other's mailbox, so replies flow in either direction after a restart.
+        if (config.peers.isNotEmpty() || config.code.isNotBlank() || config.relayUrl.isNotBlank()) {
             transport.relayUrl = config.relayUrl
             transport.start()
             if (collector?.isActive != true) watchMessages()
+            ensureRelayLoop()
             ensurePollLoop()
             ensureSyncLoop()
         }
@@ -147,7 +145,6 @@ object DeviceSyncEngine {
         )
         requireStore().saveConfig(config)
         key = DeviceSyncCrypto.deriveKey(config.code, config.password)
-        isHost = true
         transport.relayUrl = config.relayUrl
         transport.start()
         joinTarget = null
@@ -186,13 +183,8 @@ object DeviceSyncEngine {
                     delay(3_000L)
                 }
             },
-            scope.launch {
-                while (isActive) {
-                    pollRelay()
-                    delay(3_000L)
-                }
-            },
         )
+        ensureRelayLoop()
         ensureSyncLoop()
     }
 
@@ -219,9 +211,10 @@ object DeviceSyncEngine {
     suspend fun startJoinWithInvite(context: Context, invite: DevicePairingQr) {
         init(context)
         stop()
-        config = config.copy(code = invite.code)
+        // Remember the relay from the invite: without it the joiner loses the only path to the
+        // host as soon as the app restarts and the LAN endpoints change.
+        config = config.copy(code = invite.code, relayUrl = invite.relayUrl)
         requireStore().saveConfig(config)
-        isHost = false
         // Use only the relay carried by the invite: a stale local relay would send the
         // confirmation to a mailbox the host is not polling.
         transport.relayUrl = invite.relayUrl
@@ -376,9 +369,9 @@ object DeviceSyncEngine {
             val delivered = mutableListOf<Boolean>()
             peers.forEach { peer ->
                 val target = peer.toPairingTarget()
-                var cursor: String? = null
                 var batches = 0
                 while (batches < MAX_BATCHES_PER_TICK) {
+                    val cursor = requireStore().outboxCursor(peer.deviceId)
                     val events = requireStore().outboxBatch(
                         cursor,
                         MAX_EVENTS_PER_BATCH,
@@ -399,7 +392,13 @@ object DeviceSyncEngine {
                     // A failed batch stays in the outbox; retry it on the next tick instead of
                     // advancing past it and silently losing those changes.
                     if (!ok) break
-                    cursor = events.last().opId
+                    val last = events.last()
+                    // Persist by event identity, not by file name: ACKs may delete the file while
+                    // the next batch is being prepared.
+                    requireStore().saveOutboxCursor(
+                        peer.deviceId,
+                        OutboxCursor(last.createdAt, last.opId),
+                    )
                     batches++
                 }
                 if (batches == 0) {
@@ -562,11 +561,12 @@ object DeviceSyncEngine {
         backgroundJobs = emptyList()
         pollJob?.cancel()
         pollJob = null
+        relayJob?.cancel()
+        relayJob = null
         syncJob?.cancel()
         syncJob = null
         collector?.cancel()
         collector = null
-        isHost = false
         joinEndpoints = emptyList()
         pendingVerify = null
         pollAckIds = emptySet()
@@ -742,11 +742,11 @@ object DeviceSyncEngine {
                         recordLocalChanges()
                     }
                     "EVENTS" -> {
-                        // Persist first, apply in bounded chunks later. This keeps the receive
-                        // counter honest and means a crash mid-apply cannot lose remote changes.
+                        // Persist first, apply in bounded chunks on the next sync tick. This keeps
+                        // the "Changes to receive" counter visible and means a crash mid-apply
+                        // cannot lose remote changes.
                         requireStore().enqueueIncoming(message.from, message.events)
                         refreshCounts(requireStore().loadConfig().peers)
-                        drainInbox()
                     }
                     "ACK" -> {
                         requireStore().acknowledge(message.from, message.acks)
@@ -769,16 +769,29 @@ object DeviceSyncEngine {
         }
     }
 
-    /** Periodic drain so EVENTS and ACKs also flow after both devices are paired. */
+    /** The relay is a shared mailbox; both devices must keep polling it, also after a restart. */
+    private fun ensureRelayLoop() {
+        if (relayJob?.isActive == true) return
+        relayJob = scope.launch {
+            while (isActive) {
+                pollRelay()
+                delay(3_000L)
+            }
+        }
+    }
+
+    /**
+     * Periodic drain so EVENTS and ACKs keep flowing. This must not depend on the UI phase: a
+     * restart used to leave the engine in IDLE and silently stop all synchronization.
+     */
     private fun ensureSyncLoop() {
         if (syncJob?.isActive == true) return
         syncJob = scope.launch {
             while (isActive) {
                 delay(5_000L)
-                if (_state.value.phase == DeviceSyncPhase.PAIRED) {
-                    runCatching { drainInbox() }
-                    syncNow()
-                }
+                if (requireStore().loadConfig().peers.isEmpty()) continue
+                runCatching { drainInbox() }
+                syncNow()
             }
         }
     }
@@ -906,9 +919,9 @@ object DeviceSyncEngine {
             if (_state.value.error == NO_PATH_ERROR) _state.value = _state.value.copy(error = null)
             return
         }
-        // The other device may be behind NAT/WSA: leave the reply in our mailbox so its
-        // next poll delivers it. A bare 8-digit code has no addressee to queue for.
-        if (isHost && target.from.isNotBlank()) {
+        // Either device may be behind NAT/WSA: leave the reply in our mailbox so the other
+        // device's next poll delivers it. A bare 8-digit code has no addressee to queue for.
+        if (target.from.isNotBlank()) {
             transport.enqueueReply(
                 deviceId = target.from,
                 path = "/pairing",
@@ -949,7 +962,7 @@ object DeviceSyncEngine {
             attempts += transport.send(endpoint, "/sync", envelope)
         }
         if (attempts.any { it.isSuccess }) return true
-        if (!isHost || target.from.isBlank()) return false
+        if (target.from.isBlank()) return false
         val dedupe = listOf(
             message.type,
             config.deviceId,
@@ -976,5 +989,6 @@ object DeviceSyncEngine {
         endpoint = endpoint,
         endpoints = endpoints,
         code = code,
+        relayUrl = transport.relayUrl,
     )
 }

@@ -157,6 +157,10 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         }
         observeStandaloneChanges(scope)
 
+        // Restore a paired session at process start: derive the key, restart the transport and
+        // keep polling the relay/mailboxes even if the user never opens the sync settings screen.
+        scope.launchIO { DeviceSyncEngine.init(this@App) }
+
         // Show notification to disable Incognito Mode when it's enabled
         basePreferences.incognitoMode().changes()
             .onEach { enabled ->

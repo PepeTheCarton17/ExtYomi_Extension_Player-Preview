@@ -352,6 +352,40 @@ class DeviceSyncFoundationTest {
         )
     }
 
+    @Test
+    fun `send cursor keeps advancing when acknowledged files disappear`() {
+        val events = (0 until 6).map { index ->
+            DeviceSyncEvent(
+                opId = "op-$index",
+                author = "phone",
+                seq = index.toLong(),
+                createdAt = 1_000L + index,
+                entry = entry(updatedAt = index.toLong()),
+            )
+        }
+        val ordered = events.shuffled()
+            .sortedWith(compareBy<DeviceSyncEvent> { it.createdAt }.thenBy { it.opId })
+
+        val first = ordered.nextBatch(maxEvents = 2, maxChars = Int.MAX_VALUE)
+        assertEquals(events.take(2), first)
+        val cursor = OutboxCursor(first.last().createdAt, first.last().opId)
+
+        // Simulate ACKs deleting the first two outbox files before the next tick.
+        val remaining = ordered.after(cursor)
+        assertEquals(events.drop(2), remaining)
+        assertEquals(events.drop(2).take(2), remaining.nextBatch(2, Int.MAX_VALUE))
+
+        // Ties in createdAt are disambiguated by opId, so no event is skipped or resent forever.
+        val tied = listOf("b", "a", "c").map {
+            DeviceSyncEvent(opId = it, author = "phone", createdAt = 5L)
+        }
+        assertEquals(listOf("a", "b", "c"), tied.sortedBy { it.opId }.map { it.opId })
+        assertEquals(
+            listOf("b", "c"),
+            tied.sortedBy { it.opId }.after(OutboxCursor(5L, "a")).map { it.opId },
+        )
+    }
+
     private fun entry(
         updatedAt: Long,
         seen: Boolean = false,
