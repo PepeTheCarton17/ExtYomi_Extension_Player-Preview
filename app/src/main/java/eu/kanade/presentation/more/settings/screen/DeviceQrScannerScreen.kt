@@ -10,8 +10,10 @@ import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
@@ -22,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -36,7 +39,7 @@ import com.google.zxing.common.HybridBinarizer
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
 
-/** Minimal QR scanner used to join a session without typing the shared code. */
+/** QR scanner with an explicit scan button; decoding also tolerates rotated frames. */
 class DeviceQrScannerScreen(private val onResult: (String) -> Unit) : Screen {
 
     override val key: String = "device_qr_scanner"
@@ -66,13 +69,14 @@ class DeviceQrScannerScreen(private val onResult: (String) -> Unit) : Screen {
 
         val previewView = remember { PreviewView(context) }
         val done = remember { mutableStateOf(false) }
+        val lastDecoded = remember { mutableStateOf<String?>(null) }
+        val scanRequested = remember { mutableStateOf(false) }
         val analyzer = remember {
             ImageAnalysis.Builder()
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build()
         }
-
-        AndroidView({ previewView }, modifier = Modifier.fillMaxSize())
+        val mainExecutor = remember { ContextCompat.getMainExecutor(context) }
 
         LaunchedEffect(Unit) {
             val future = ProcessCameraProvider.getInstance(context)
@@ -82,11 +86,22 @@ class DeviceQrScannerScreen(private val onResult: (String) -> Unit) : Screen {
                     val preview = Preview.Builder().build().also { cameraPreview ->
                         cameraPreview.setSurfaceProvider(previewView.surfaceProvider)
                     }
-                    analyzer.setAnalyzer(ContextCompat.getMainExecutor(context)) { image ->
-                        val decoded = runCatching { decode(image) }.getOrNull()
+                    analyzer.setAnalyzer(mainExecutor) { image ->
+                        val decoded = if (lastDecoded.value != null && !scanRequested.value) {
+                            lastDecoded.value
+                        } else {
+                            runCatching { decode(image) }.getOrNull()
+                        }
                         image.close()
-                        if (decoded != null && !done.value) {
+                        if (decoded != null) {
+                            lastDecoded.value = decoded
+                        } else {
+                            lastDecoded.value = null
+                            scanRequested.value = false
+                        }
+                        if (scanRequested.value && decoded != null && !done.value) {
                             done.value = true
+                            scanRequested.value = false
                             onResult(decoded)
                         }
                     }
@@ -100,12 +115,31 @@ class DeviceQrScannerScreen(private val onResult: (String) -> Unit) : Screen {
                         )
                     }
                 },
-                ContextCompat.getMainExecutor(context),
+                mainExecutor,
             )
         }
 
         DisposableEffect(Unit) {
             onDispose { analyzer.clearAnalyzer() }
+        }
+
+        Box(Modifier.fillMaxSize()) {
+            AndroidView({ previewView }, modifier = Modifier.fillMaxSize())
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(ButtonPadding),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(stringResource(MR.strings.device_sync_scan_hint))
+                Button(
+                    onClick = { scanRequested.value = true },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(MR.strings.device_sync_scan))
+                }
+            }
         }
     }
 
@@ -113,16 +147,67 @@ class DeviceQrScannerScreen(private val onResult: (String) -> Unit) : Screen {
         val plane = image.planes.firstOrNull() ?: return null
         val width = image.width
         val height = image.height
-        val rowStride = plane.rowStride
-        val buffer = plane.buffer
         val data = ByteArray(width * height)
         for (y in 0 until height) {
-            buffer.position(y * rowStride)
-            buffer.get(data, y * width, width)
+            bufferPosition(plane.buffer, y * plane.rowStride)
+            plane.buffer.get(data, y * width, width)
         }
-        val source = PlanarYUVLuminanceSource(data, width, height, 0, 0, width, height, false)
-        val bitmap = BinaryBitmap(HybridBinarizer(source))
-        return MultiFormatReader().decode(bitmap).text
+        // ZXing is sensitive to rotation; try all four orientations of the Y plane.
+        listOf(0, 90, 180, 270).forEach { degrees ->
+            val (bytes, decodedWidth, decodedHeight) = rotate(data, width, height, degrees)
+            val result = runCatching {
+                MultiFormatReader().decode(
+                    BinaryBitmap(
+                        HybridBinarizer(
+                            PlanarYUVLuminanceSource(
+                                bytes,
+                                decodedWidth,
+                                decodedHeight,
+                                0,
+                                0,
+                                decodedWidth,
+                                decodedHeight,
+                                false,
+                            ),
+                        ),
+                    ),
+                )
+            }.getOrNull()
+            if (result != null) return result.text
+        }
+        return null
+    }
+
+    private fun bufferPosition(buffer: java.nio.ByteBuffer, position: Int) {
+        buffer.position(position)
+    }
+
+    private fun rotate(
+        data: ByteArray,
+        width: Int,
+        height: Int,
+        degrees: Int,
+    ): Triple<ByteArray, Int, Int> = when (degrees) {
+        90 -> {
+            val out = ByteArray(width * height)
+            for (y in 0 until height) {
+                for (x in 0 until width) {
+                    out[x * height + (height - 1 - y)] = data[y * width + x]
+                }
+            }
+            Triple(out, height, width)
+        }
+        270 -> {
+            val out = ByteArray(width * height)
+            for (y in 0 until height) {
+                for (x in 0 until width) {
+                    out[(width - 1 - x) * height + y] = data[y * width + x]
+                }
+            }
+            Triple(out, height, width)
+        }
+        180 -> Triple(data.reversedArray(), width, height)
+        else -> Triple(data, width, height)
     }
 
     private companion object {

@@ -35,7 +35,10 @@ data class DeviceSyncUiState(
     val password: String = "",
     val passwordVisible: Boolean = false,
     val endpoint: String = "",
+    val relayUrl: String = "",
     val candidates: List<DevicePairingMessage> = emptyList(),
+    val confirmedCandidates: Set<String> = emptySet(),
+    val joinConfirmed: Boolean = false,
     val peers: List<DeviceSyncPeer> = emptyList(),
     val syncSettings: Boolean = false,
     val pending: Int = 0,
@@ -75,6 +78,7 @@ object DeviceSyncEngine {
             deviceModel = Build.MODEL,
             peers = config.peers,
             syncSettings = config.syncSettings,
+            relayUrl = config.relayUrl,
             pending = requireStore().pendingCount(),
             error = null,
         )
@@ -100,7 +104,10 @@ object DeviceSyncEngine {
             password = config.password,
             passwordVisible = false,
             endpoint = transport.endpoint,
+            relayUrl = config.relayUrl,
             candidates = emptyList(),
+            confirmedCandidates = emptySet(),
+            joinConfirmed = false,
             error = null,
         )
         watchMessages()
@@ -115,6 +122,7 @@ object DeviceSyncEngine {
                             deviceModel = Build.MODEL,
                             endpoint = transport.endpoint,
                             code = config.code,
+                            relayUrl = config.relayUrl,
                         ),
                     )
                     delay(3_000L)
@@ -130,73 +138,66 @@ object DeviceSyncEngine {
     }
 
     suspend fun startJoin(context: Context, target: DevicePairingMessage) {
-        init(context)
-        stop()
-        transport.relayUrl = target.relayUrl.ifBlank { config.relayUrl }
-        transport.start()
-        joinTarget = target
-        key = null
-        _state.value = _state.value.copy(
-            phase = DeviceSyncPhase.JOIN_WAITING_PASSWORD,
-            code = target.code,
-            password = "",
-            passwordVisible = false,
-            endpoint = transport.endpoint,
-            error = null,
-        )
-        watchMessages()
-        transport.broadcast(
-            DevicePairingMessage(
-                type = "CODE_CONFIRM",
-                from = config.deviceId,
-                deviceName = Build.MODEL,
-                deviceModel = Build.MODEL,
-                endpoint = transport.endpoint,
+        startJoinWithInvite(
+            context,
+            DevicePairingQr(
                 code = target.code,
-                to = target.from,
+                name = target.deviceName,
+                model = target.deviceModel,
+                endpoint = target.endpoint,
+                relayUrl = target.relayUrl,
             ),
         )
-        sendPairing(target, "CODE_CONFIRM")
     }
 
-    /** Manual fallback: the code is typed while both devices are on the same LAN. */
-    suspend fun startJoinByCode(context: Context, code: String, relayUrl: String = "") {
+    /**
+     * The second device only pastes the link/QR payload shown by the first one.
+     * Confirmation is sent straight to the endpoint (or relay) inside the link,
+     * so it no longer depends on LAN broadcasts reaching the other device.
+     */
+    suspend fun startJoinWithInvite(context: Context, invite: DevicePairingQr) {
         init(context)
         stop()
-        transport.relayUrl = relayUrl.ifBlank { config.relayUrl }
+        transport.relayUrl = invite.relayUrl.ifBlank { config.relayUrl }
         transport.start()
-        joinTarget = DevicePairingMessage(type = "OFFER", from = "", code = code)
+        joinTarget = DevicePairingMessage(
+            type = "OFFER",
+            from = "",
+            deviceName = invite.name,
+            deviceModel = invite.model,
+            endpoint = invite.endpoint,
+            code = invite.code,
+            relayUrl = invite.relayUrl,
+        )
         key = null
         _state.value = _state.value.copy(
             phase = DeviceSyncPhase.JOIN_WAITING_PASSWORD,
-            code = code,
+            code = invite.code,
             password = "",
             passwordVisible = false,
             endpoint = transport.endpoint,
+            relayUrl = transport.relayUrl,
+            candidates = emptyList(),
+            confirmedCandidates = emptySet(),
+            joinConfirmed = false,
             error = null,
         )
         watchMessages()
-        val broadcast = DevicePairingMessage(
-            type = "CODE_CONFIRM",
-            from = config.deviceId,
-            deviceName = Build.MODEL,
-            deviceModel = Build.MODEL,
-            endpoint = transport.endpoint,
-            code = code,
-        )
-        transport.broadcast(broadcast)
-        if (transport.relayUrl.isNotBlank()) {
-            transport.relaySend(code, "/pairing", broadcast.toJson())
-        }
+        sendPairing(requireNotNull(joinTarget), "CODE_CONFIRM")
     }
 
-    /** The first device reveals the password only after selecting the devices to confirm. */
+    /** The first device reveals the password only after confirming at least one device. */
     fun confirmCandidates(ids: Set<String>) {
         confirmedCandidates = ids
         _state.value = _state.value.copy(
-            phase = DeviceSyncPhase.HOST_PASSWORD_READY,
+            phase = if (ids.isEmpty()) DeviceSyncPhase.HOST_WAITING else DeviceSyncPhase.HOST_PASSWORD_READY,
             passwordVisible = ids.isNotEmpty(),
+            confirmedCandidates = ids,
         )
+        ids.forEach { id ->
+            val candidate = _state.value.candidates.firstOrNull { it.from == id } ?: return@forEach
+            scope.launch { sendPairing(candidate.copy(to = id, confirmed = true), "CONFIRM") }
+        }
     }
 
     suspend fun submitPassword(password: String) {
@@ -394,8 +395,28 @@ object DeviceSyncEngine {
                         if (message.to.isNotBlank() && message.to != config.deviceId) return
                         val current = _state.value.candidates
                         if (current.none { it.from == message.from }) {
-                            _state.value = _state.value.copy(candidates = current + message)
+                            val updated = current + message
+                            // First requester is confirmed automatically so the password appears
+                            // without an extra tap; further devices can still be selected in the UI.
+                            val auto = _state.value.phase == DeviceSyncPhase.HOST_WAITING &&
+                                _state.value.confirmedCandidates.isEmpty()
+                            val confirmed = if (auto) setOf(message.from) else _state.value.confirmedCandidates
+                            confirmedCandidates = confirmed
+                            _state.value = _state.value.copy(
+                                candidates = updated,
+                                confirmedCandidates = confirmed,
+                                phase = if (auto) DeviceSyncPhase.HOST_PASSWORD_READY else _state.value.phase,
+                                passwordVisible = auto || _state.value.passwordVisible,
+                            )
+                            if (auto) {
+                                sendPairing(message.copy(to = message.from, confirmed = true), "CONFIRM")
+                            }
                         }
+                    }
+                    "CONFIRM" -> {
+                        if (message.code != joinTarget?.code) return
+                        if (message.to.isNotBlank() && message.to != config.deviceId) return
+                        _state.value = _state.value.copy(joinConfirmed = true, error = null)
                     }
                 }
             }
@@ -498,7 +519,9 @@ object DeviceSyncEngine {
     }
 
     private suspend fun pollRelay() {
-        val code = config.code.ifBlank { joinTarget?.code }.orEmpty()
+        val joining = _state.value.phase == DeviceSyncPhase.JOIN_WAITING_PASSWORD ||
+            _state.value.phase == DeviceSyncPhase.JOIN_WAITING_ACK
+        val code = (if (joining) joinTarget?.code ?: config.code else config.code).orEmpty()
         if (code.isBlank() || transport.relayUrl.isBlank()) return
         listOf("/pairing", "/sync").forEach { path ->
             transport.relayPoll(code, path).getOrNull()?.forEach { body ->
@@ -508,7 +531,7 @@ object DeviceSyncEngine {
     }
 
     private suspend fun sendPairing(target: DevicePairingMessage, type: String) {
-        val message = DevicePairingMessage(
+        val pairing = DevicePairingMessage(
             type = type,
             from = config.deviceId,
             deviceName = Build.MODEL,
@@ -516,11 +539,13 @@ object DeviceSyncEngine {
             endpoint = transport.endpoint,
             code = target.code,
             to = target.from,
-        ).toJson()
-        if (target.relayUrl.isNotBlank() || transport.relayUrl.isNotBlank()) {
-            transport.relaySend(target.code, "/pairing", message)
-        } else {
-            transport.send(target.endpoint, "/pairing", message)
+        )
+        when {
+            target.relayUrl.isNotBlank() || transport.relayUrl.isNotBlank() ->
+                transport.relaySend(target.code, "/pairing", pairing.toJson())
+            target.endpoint.isNotBlank() ->
+                transport.send(target.endpoint, "/pairing", pairing.toJson())
+            else -> transport.broadcast(pairing)
         }
     }
 

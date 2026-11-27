@@ -846,6 +846,15 @@
     <string name="device_sync_camera_permission">Permitir cámara</string>
     <string name="device_sync_ack_info">Los archivos de sincronización se borran solo después de que todos los dispositivos vinculados los confirman.</string>
     <string name="device_sync_settings_toggle">Sincronizar también algunos ajustes de biblioteca (opcional, desactivado por defecto)</string>
+    <string name="device_sync_scan">Escanear QR</string>
+    <string name="device_sync_scan_hint">Apunta al código QR y pulsa Escanear.</string>
+    <string name="device_sync_invite">Enlace de emparejamiento</string>
+    <string name="device_sync_copy_invite">Copiar enlace</string>
+    <string name="device_sync_paste_invite">Pega el enlace o el código de 8 dígitos</string>
+    <string name="device_sync_join">Unirse</string>
+    <string name="device_sync_code_confirmed">Código confirmado. Escribe la contraseña que muestra el otro dispositivo.</string>
+    <string name="device_sync_relay_hint">Se incluye en el enlace; el otro dispositivo no necesita configurarlo.</string>
+    <string name="device_sync_bad_invite">Enlace o código no válido.</string>
     <string name="information_cloudflare_help">Toca aquí para solucionar problemas de acceso con Cloudflare</string>
     <string name="download_cache_invalidated">Se ha borrado el índice de descargas</string>
     <string name="track_activity_name">Iniciar sesión en el servicio</string>

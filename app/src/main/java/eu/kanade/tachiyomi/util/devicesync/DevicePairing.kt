@@ -19,6 +19,7 @@ data class DevicePairingQr(
 /** Session codes and pairing secrets, generated locally and never transmitted as secrets. */
 object DevicePairing {
     private const val QR_PREFIX = "EXTYOMISYNC1:"
+    private const val INVITE_PREFIX = "extyomisync://pair#"
 
     // No I/O/0/1 so the password can be read aloud without ambiguity.
     private const val PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -34,12 +35,35 @@ object DevicePairing {
         repeat(10) { append(PASSWORD_ALPHABET[random.nextInt(PASSWORD_ALPHABET.length)]) }
     }
 
-    fun encodeQr(qr: DevicePairingQr): String =
-        QR_PREFIX + DeviceBase64.encode(deviceSyncJson.encodeToString(qr).toByteArray())
+    fun encodeQr(qr: DevicePairingQr): String = QR_PREFIX + encodePayload(qr)
+
+    /** A URL-like string the first device can show and the second one can simply paste. */
+    fun encodeInvite(qr: DevicePairingQr): String = INVITE_PREFIX + encodePayload(qr)
+
+    /**
+     * Accepts the invite URL, the legacy QR payload, or a bare 8-digit code (LAN only).
+     * Nothing here is fetched from the network: the payload is decoded locally.
+     */
+    fun decodeInvite(text: String): DevicePairingQr? {
+        val value = text.trim()
+        return when {
+            value.startsWith(INVITE_PREFIX) -> decodePayload(value.removePrefix(INVITE_PREFIX))
+            value.startsWith(QR_PREFIX) -> decodePayload(value.removePrefix(QR_PREFIX))
+            value.length == 8 && value.all { it in '0'..'9' } -> DevicePairingQr(code = value)
+            else -> null
+        }
+    }
 
     fun decodeQr(text: String): DevicePairingQr? = runCatching {
-        require(text.startsWith(QR_PREFIX)) { "Not an ExtYomi pairing code" }
-        val json = String(DeviceBase64.decode(text.removePrefix(QR_PREFIX)), Charsets.UTF_8)
+        require(text.trim().startsWith(QR_PREFIX)) { "Not an ExtYomi pairing code" }
+        decodePayload(text.trim().removePrefix(QR_PREFIX)) ?: error("Invalid pairing payload")
+    }.getOrNull()
+
+    private fun encodePayload(qr: DevicePairingQr): String =
+        DeviceBase64.encode(deviceSyncJson.encodeToString(qr).toByteArray())
+
+    private fun decodePayload(payload: String): DevicePairingQr? = runCatching {
+        val json = String(DeviceBase64.decode(payload), Charsets.UTF_8)
         deviceSyncJson.decodeFromString<DevicePairingQr>(json)
             .takeIf { it.code.length == 8 && it.code.all { c -> c in '0'..'9' } }
     }.getOrNull()

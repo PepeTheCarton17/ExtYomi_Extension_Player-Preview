@@ -56,6 +56,30 @@ class DeviceSyncFoundationTest {
     }
 
     @Test
+    fun `invite link round trips and accepts a bare code`() {
+        val qr = DevicePairingQr(
+            code = "12345678",
+            name = "Mi ExtYomi",
+            model = "Pixel 8",
+            endpoint = "192.168.1.10:8787",
+            relayUrl = "https://relay.example.com",
+        )
+        val invite = DevicePairing.encodeInvite(qr)
+
+        assertTrue(invite.startsWith("extyomisync://pair#"))
+        assertEquals(qr, DevicePairing.decodeInvite(invite))
+        assertEquals("87654321", DevicePairing.decodeInvite(" 87654321 ")?.code)
+        assertEquals(qr, DevicePairing.decodeInvite(DevicePairing.encodeQr(qr)))
+    }
+
+    @Test
+    fun `invite link rejects foreign payloads`() {
+        assertEquals(null, DevicePairing.decodeInvite("https://example.com/pair"))
+        assertEquals(null, DevicePairing.decodeInvite("extyomisync://pair#not-base64"))
+        assertEquals(null, DevicePairing.decodeInvite("1234567"))
+    }
+
+    @Test
     fun `progress is monotonic and a newer tombstone wins`() {
         val older = entry(updatedAt = 100L, seen = false, favorite = true)
         val newer = entry(updatedAt = 200L, seen = true, deleted = true)
