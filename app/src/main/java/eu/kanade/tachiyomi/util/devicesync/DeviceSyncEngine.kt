@@ -35,6 +35,7 @@ data class DeviceSyncUiState(
     val password: String = "",
     val passwordVisible: Boolean = false,
     val endpoint: String = "",
+    val endpoints: List<String> = emptyList(),
     val relayUrl: String = "",
     val candidates: List<DevicePairingMessage> = emptyList(),
     val confirmedCandidates: Set<String> = emptySet(),
@@ -49,6 +50,10 @@ data class DeviceSyncUiState(
 /** Owns the pairing state machine, the encrypted outbox and the ACK lifecycle. */
 object DeviceSyncEngine {
 
+    private const val NO_PATH_ERROR =
+        "No se pudo contactar con el otro dispositivo. Comprueba que ambos estén en la misma Wi-Fi " +
+            "(sin aislamiento de punto de acceso) o configura un servidor relay."
+
     private val transport = DeviceSyncTransport()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val syncMutex = Mutex()
@@ -59,6 +64,8 @@ object DeviceSyncEngine {
     private var key: SecretKeySpec? = null
     private var config = DeviceSyncConfig()
     private var joinTarget: DevicePairingMessage? = null
+    private var joinEndpoints: List<String> = emptyList()
+    private var pendingVerify: DeviceSyncMessage? = null
     private var confirmedCandidates: Set<String> = emptySet()
     private var backgroundJobs: List<Job> = emptyList()
     private var seq = 0L
@@ -104,6 +111,7 @@ object DeviceSyncEngine {
             password = config.password,
             passwordVisible = false,
             endpoint = transport.endpoint,
+            endpoints = transport.endpoints,
             relayUrl = config.relayUrl,
             candidates = emptyList(),
             confirmedCandidates = emptySet(),
@@ -121,6 +129,7 @@ object DeviceSyncEngine {
                             deviceName = Build.MODEL,
                             deviceModel = Build.MODEL,
                             endpoint = transport.endpoint,
+                            endpoints = transport.endpoints,
                             code = config.code,
                             relayUrl = config.relayUrl,
                         ),
@@ -145,6 +154,7 @@ object DeviceSyncEngine {
                 name = target.deviceName,
                 model = target.deviceModel,
                 endpoint = target.endpoint,
+                endpoints = target.endpoints,
                 relayUrl = target.relayUrl,
             ),
         )
@@ -162,12 +172,17 @@ object DeviceSyncEngine {
         // confirmation to a mailbox the host is not polling.
         transport.relayUrl = invite.relayUrl
         transport.start()
+        joinEndpoints = (invite.endpoints + invite.endpoint)
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
         joinTarget = DevicePairingMessage(
             type = "OFFER",
             from = "",
             deviceName = invite.name,
             deviceModel = invite.model,
             endpoint = invite.endpoint,
+            endpoints = joinEndpoints,
             code = invite.code,
             relayUrl = invite.relayUrl,
         )
@@ -178,6 +193,7 @@ object DeviceSyncEngine {
             password = "",
             passwordVisible = false,
             endpoint = transport.endpoint,
+            endpoints = joinEndpoints,
             relayUrl = transport.relayUrl,
             candidates = emptyList(),
             confirmedCandidates = emptySet(),
@@ -202,6 +218,11 @@ object DeviceSyncEngine {
                     !_state.value.joinConfirmed
                 ) {
                     sendPairing(target, "CODE_CONFIRM")
+                }
+                // A wrong/unreachable endpoint on the first try must not make the manually
+                // entered password useless: keep retrying the encrypted VERIFY as well.
+                if (_state.value.phase == DeviceSyncPhase.JOIN_WAITING_ACK) {
+                    pendingVerify?.let { sendEncrypted(target, it) }
                 }
                 if (transport.relayUrl.isNotBlank()) pollRelay()
             }
@@ -233,22 +254,27 @@ object DeviceSyncEngine {
 
     suspend fun submitPassword(password: String) {
         val target = joinTarget ?: return
-        if (password.length != 10) {
-            _state.value = _state.value.copy(error = "La contraseña debe tener 10 letras")
+        val normalized = password.trim().uppercase()
+        if (normalized.length != 10 || normalized.any { !DevicePairing.isPasswordChar(it) }) {
+            _state.value = _state.value.copy(
+                error = "La contraseña debe tener 10 letras o números (sin 0, 1, I ni O)",
+            )
             return
         }
-        key = DeviceSyncCrypto.deriveKey(target.code, password.uppercase())
+        key = DeviceSyncCrypto.deriveKey(target.code, normalized)
         val message = DeviceSyncMessage(
             type = "VERIFY",
             from = config.deviceId,
             deviceName = Build.MODEL,
             deviceModel = Build.MODEL,
             endpoint = transport.endpoint,
+            endpoints = transport.endpoints,
         )
-        sendEncrypted(target, message)
+        pendingVerify = message
+        val delivered = sendEncrypted(target, message)
         _state.value = _state.value.copy(
             phase = DeviceSyncPhase.JOIN_WAITING_ACK,
-            error = null,
+            error = if (delivered) null else NO_PATH_ERROR,
         )
     }
 
@@ -264,6 +290,7 @@ object DeviceSyncEngine {
                     from = config.deviceId,
                     to = peer.deviceId,
                     endpoint = transport.endpoint,
+                    endpoints = transport.endpoints,
                     events = events,
                     sentAt = System.currentTimeMillis(),
                 )
@@ -385,6 +412,8 @@ object DeviceSyncEngine {
         backgroundJobs = emptyList()
         collector?.cancel()
         collector = null
+        joinEndpoints = emptyList()
+        pendingVerify = null
         transport.stop()
         if (_state.value.phase != DeviceSyncPhase.IDLE) {
             _state.value = _state.value.copy(phase = DeviceSyncPhase.PAIRED)
@@ -410,10 +439,20 @@ object DeviceSyncEngine {
                     "OFFER" -> {
                         if (
                             _state.value.phase == DeviceSyncPhase.JOIN_WAITING_PASSWORD &&
-                            joinTarget?.endpoint.isNullOrBlank() &&
                             message.code == joinTarget?.code
                         ) {
-                            joinTarget = message
+                            if (joinTarget?.endpoint.isNullOrBlank()) joinTarget = message
+                            // A bare 8-digit code has no endpoint; a broadcast OFFER supplies one,
+                            // possibly with more addresses than the QR carried.
+                            val merged = (joinEndpoints + message.endpoints + message.endpoint)
+                                .map { it.trim() }
+                                .filter { it.isNotBlank() }
+                                .distinct()
+                            if (merged.isNotEmpty()) {
+                                joinEndpoints = merged
+                                joinTarget = joinTarget?.copy(endpoints = merged)
+                                _state.value = _state.value.copy(endpoints = merged)
+                            }
                         }
                         val current = _state.value.candidates
                         if (current.none { it.from == message.from && it.code == message.code }) {
@@ -446,6 +485,20 @@ object DeviceSyncEngine {
                     "CONFIRM" -> {
                         if (message.code != joinTarget?.code) return
                         if (message.to.isNotBlank() && message.to != config.deviceId) return
+                        // With a bare 8-digit code there was no endpoint at all; the CONFIRM
+                        // message is the first chance to learn where the host actually lives.
+                        val merged = (joinEndpoints + message.endpoints + message.endpoint)
+                            .map { it.trim() }
+                            .filter { it.isNotBlank() }
+                            .distinct()
+                        if (merged.isNotEmpty()) {
+                            joinEndpoints = merged
+                            joinTarget = joinTarget?.copy(
+                                endpoint = message.endpoint.ifBlank { merged.first() },
+                                endpoints = merged,
+                            )
+                            _state.value = _state.value.copy(endpoints = merged)
+                        }
                         _state.value = _state.value.copy(joinConfirmed = true, error = null)
                     }
                 }
@@ -471,6 +524,7 @@ object DeviceSyncEngine {
                                 name = message.deviceName,
                                 model = message.deviceModel,
                                 endpoint = message.endpoint,
+                                endpoints = message.endpoints,
                                 code = config.code,
                                 trustedAt = System.currentTimeMillis(),
                             )
@@ -483,6 +537,7 @@ object DeviceSyncEngine {
                                 name = message.deviceName,
                                 model = message.deviceModel,
                                 endpoint = message.endpoint,
+                                endpoints = message.endpoints,
                                 code = config.code,
                             ).toPairingTarget(),
                             DeviceSyncMessage(
@@ -490,6 +545,7 @@ object DeviceSyncEngine {
                                 from = config.deviceId,
                                 to = message.from,
                                 endpoint = transport.endpoint,
+                                endpoints = transport.endpoints,
                             ),
                         )
                         _state.value = _state.value.copy(
@@ -499,13 +555,15 @@ object DeviceSyncEngine {
                         recordLocalChanges()
                     }
                     "VERIFY_ACK" -> {
+                        pendingVerify = null
                         val peers = requireStore().loadConfig().peers.toMutableList()
                         if (peers.none { it.deviceId == message.from }) {
                             peers += DeviceSyncPeer(
                                 deviceId = message.from,
                                 name = message.deviceName,
                                 model = message.deviceModel,
-                                endpoint = joinTarget?.endpoint.orEmpty(),
+                                endpoint = message.endpoint.ifBlank { joinTarget?.endpoint.orEmpty() },
+                                endpoints = message.endpoints.ifEmpty { joinTarget?.endpoints.orEmpty() },
                                 code = config.code,
                                 trustedAt = System.currentTimeMillis(),
                             )
@@ -540,6 +598,8 @@ object DeviceSyncEngine {
                                 type = "ACK",
                                 from = config.deviceId,
                                 to = message.from,
+                                endpoint = transport.endpoint,
+                                endpoints = transport.endpoints,
                                 acks = message.events.map { it.opId },
                             ),
                         )
@@ -570,27 +630,36 @@ object DeviceSyncEngine {
             deviceName = Build.MODEL,
             deviceModel = Build.MODEL,
             endpoint = transport.endpoint,
+            endpoints = transport.endpoints,
             code = target.code,
             // Carry the relay so the other device replies on the same channel. Without this,
             // a relay-backed pairing could confirm but never complete the handshake.
             relayUrl = target.relayUrl.ifBlank { transport.relayUrl },
             to = target.from,
         )
-        val sent = when {
-            target.relayUrl.isNotBlank() || transport.relayUrl.isNotBlank() ->
-                transport.relaySend(target.code, "/pairing", pairing.toJson())
-            target.endpoint.isNotBlank() ->
-                transport.send(target.endpoint, "/pairing", pairing.toJson())
-            else -> {
-                transport.broadcast(pairing)
-                Result.success(Unit)
-            }
+        val body = pairing.toJson()
+        val attempts = mutableListOf<Result<Unit>>()
+        val relay = pairing.relayUrl
+        val endpoints = endpointsOf(target)
+        if (relay.isNotBlank()) attempts += transport.relaySend(target.code, "/pairing", body)
+        endpoints.forEach { endpoint ->
+            if (attempts.lastOrNull()?.isSuccess == true) return@forEach
+            attempts += transport.send(endpoint, "/pairing", body)
         }
-        if (sent.isFailure) transport.broadcast(pairing)
+        if (attempts.any { it.isSuccess }) {
+            if (_state.value.error == NO_PATH_ERROR) _state.value = _state.value.copy(error = null)
+            return
+        }
+        // Last chance when a device only allows UDP on the local network. A bare 8-digit
+        // code has no address at all, so broadcasting is the expected path, not an error.
+        transport.broadcast(pairing)
+        if (relay.isNotBlank() || endpoints.isNotEmpty()) {
+            _state.value = _state.value.copy(error = NO_PATH_ERROR)
+        }
     }
 
-    private suspend fun sendEncrypted(target: DevicePairingMessage, message: DeviceSyncMessage) {
-        val activeKey = key ?: return
+    private suspend fun sendEncrypted(target: DevicePairingMessage, message: DeviceSyncMessage): Boolean {
+        val activeKey = key ?: return false
         val (iv, ciphertext) = DeviceSyncCrypto.encrypt(message.toJson(), activeKey)
         val envelope = DeviceSyncEnvelope(
             type = message.type,
@@ -601,12 +670,22 @@ object DeviceSyncEngine {
             ciphertext = ciphertext,
             sentAt = System.currentTimeMillis(),
         ).toJson()
-        if (target.relayUrl.isNotBlank() || transport.relayUrl.isNotBlank()) {
-            transport.relaySend(target.code, "/sync", envelope)
-        } else {
-            transport.send(target.endpoint, "/sync", envelope)
+        val relay = target.relayUrl.ifBlank { transport.relayUrl }
+        val attempts = mutableListOf<Result<Unit>>()
+        if (relay.isNotBlank()) attempts += transport.relaySend(target.code, "/sync", envelope)
+        endpointsOf(target).forEach { endpoint ->
+            if (attempts.lastOrNull()?.isSuccess == true) return@forEach
+            attempts += transport.send(endpoint, "/sync", envelope)
         }
+        return attempts.any { it.isSuccess }
     }
+
+    /** The QR used to carry a single address; a phone can have Wi-Fi, VPN and hotspot at once. */
+    private fun endpointsOf(target: DevicePairingMessage): List<String> =
+        (target.endpoints + target.endpoint)
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
 
     private fun requireStore(): DeviceSyncStore = store ?: error("Device sync is not initialized")
 
@@ -614,6 +693,7 @@ object DeviceSyncEngine {
         type = "PEER",
         from = deviceId,
         endpoint = endpoint,
+        endpoints = endpoints,
         code = code,
     )
 
@@ -622,6 +702,7 @@ object DeviceSyncEngine {
         name = deviceName,
         model = deviceModel,
         endpoint = endpoint,
+        endpoints = endpoints,
         code = config.code,
     )
 }

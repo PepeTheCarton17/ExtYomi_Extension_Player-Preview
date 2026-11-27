@@ -95,6 +95,7 @@ data class DevicePairingMessage(
     val deviceName: String = "",
     val deviceModel: String = "",
     val endpoint: String = "",
+    val endpoints: List<String> = emptyList(),
     val code: String = "",
     val relayUrl: String = "",
     val to: String = "",
@@ -123,6 +124,8 @@ data class DeviceSyncMessage(
     val deviceName: String = "",
     val deviceModel: String = "",
     val endpoint: String = "",
+    /** All LAN addresses of the sender, so replies can skip an unreachable adapter. */
+    val endpoints: List<String> = emptyList(),
     val events: List<DeviceSyncEvent> = emptyList(),
     val acks: List<String> = emptyList(),
     val snapshot: DeviceSyncSnapshot? = null,
@@ -135,6 +138,8 @@ data class DeviceSyncPeer(
     val name: String,
     val model: String,
     val endpoint: String,
+    /** Kept alongside [endpoint] so later syncs can try every known address. */
+    val endpoints: List<String> = emptyList(),
     val code: String,
     val trustedAt: Long = 0L,
     val lastSeen: Long = 0L,

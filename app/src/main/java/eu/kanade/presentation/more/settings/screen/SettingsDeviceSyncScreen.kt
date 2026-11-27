@@ -82,7 +82,7 @@ object SettingsDeviceSyncScreen : SearchableSettings {
             state.phase == DeviceSyncPhase.HOST_PASSWORD_READY ||
             (state.phase == DeviceSyncPhase.PAIRED && state.passwordVisible)
         val showInvite = isHost && state.code.length == 8 && state.endpoint.isNotBlank()
-        val pairingQr = remember(showInvite, state.code, state.endpoint, state.relayUrl) {
+        val pairingQr = remember(showInvite, state.code, state.endpoint, state.endpoints, state.relayUrl) {
             if (!showInvite) {
                 null
             } else {
@@ -91,6 +91,7 @@ object SettingsDeviceSyncScreen : SearchableSettings {
                     name = Build.MODEL,
                     model = Build.MODEL,
                     endpoint = state.endpoint,
+                    endpoints = state.endpoints,
                     relayUrl = state.relayUrl,
                 )
             }
@@ -299,7 +300,9 @@ object SettingsDeviceSyncScreen : SearchableSettings {
                             OutlinedTextField(
                                 value = password,
                                 onValueChange = {
-                                    password = it.uppercase().filter { c -> c.isLetter() }.take(10)
+                                    password = it.uppercase()
+                                        .filter(DevicePairing::isPasswordChar)
+                                        .take(10)
                                 },
                                 label = { Text(stringResource(MR.strings.device_sync_password)) },
                                 singleLine = true,

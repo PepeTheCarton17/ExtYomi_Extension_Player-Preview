@@ -706,7 +706,7 @@
     <string name="device_sync_join_qr">Scan QR code</string>
     <string name="device_sync_join_manual">Pair manually</string>
     <string name="device_sync_code">Session code (8 digits)</string>
-    <string name="device_sync_password">Password (10 letters)</string>
+    <string name="device_sync_password">Password (10 letters or digits)</string>
     <string name="device_sync_confirm_devices">Confirm selected devices</string>
     <string name="device_sync_reveal_password">Password for the second device</string>
     <string name="device_sync_waiting_code">Waiting for the other device to confirm the code</string>

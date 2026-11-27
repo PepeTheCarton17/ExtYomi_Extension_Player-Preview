@@ -46,13 +46,19 @@ class DeviceSyncTransport {
     var endpoint: String = ""
         private set
 
+    /** All reachable LAN addresses; the first one alone can be a virtual/VPN adapter. */
+    var endpoints: List<String> = emptyList()
+        private set
+
     var relayUrl: String = ""
 
     fun start() {
         if (server != null) return
         val socket = ServerSocket(0, 50, InetAddress.getByName("0.0.0.0"))
         server = socket
-        endpoint = "${lanAddress() ?: "127.0.0.1"}:${socket.localPort}"
+        val addresses = lanAddresses()
+        endpoints = addresses.map { "$it:${socket.localPort}" }
+        endpoint = endpoints.firstOrNull() ?: "127.0.0.1:${socket.localPort}"
         val udp = runCatching {
             DatagramSocket(DISCOVERY_PORT).apply {
                 reuseAddress = true
@@ -169,11 +175,13 @@ class DeviceSyncTransport {
         }
     }
 
-    private fun lanAddress(): String? = NetworkInterface.getNetworkInterfaces().toList()
+    private fun lanAddresses(): List<String> = NetworkInterface.getNetworkInterfaces().toList()
         .flatMap { it.inetAddresses.toList() }
-        .firstOrNull { address ->
+        .filter { address ->
             !address.isLoopbackAddress && address is InetAddress && address.isSiteLocalAddress
-        }?.hostAddress
+        }
+        .map { it.hostAddress }
+        .distinct()
 
     private companion object {
         const val DISCOVERY_PORT = 8788
