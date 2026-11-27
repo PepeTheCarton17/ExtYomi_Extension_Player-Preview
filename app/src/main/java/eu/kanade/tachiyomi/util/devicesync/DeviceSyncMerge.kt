@@ -52,6 +52,7 @@ object DeviceSyncMerge {
         return winner.copy(
             dateAdded = listOf(current.dateAdded, incoming.dateAdded)
                 .firstOrNull { it > 0L } ?: 0L,
+            lastUpdate = maxOf(current.lastUpdate, incoming.lastUpdate),
             updatedAt = maxOf(current.updatedAt, incoming.updatedAt),
             // A category is present only when its newest version is an add.
             categories = versions.filterValues { it > 0L }.keys.toList().sorted(),
@@ -68,6 +69,9 @@ object DeviceSyncMerge {
         name = listOf(current.name, incoming.name).firstOrNull { it.isNotBlank() }.orEmpty(),
         seen = current.seen || incoming.seen,
         bookmark = current.bookmark || incoming.bookmark,
+        fillermark = current.fillermark || incoming.fillermark,
+        count = maxOf(current.count, incoming.count),
+        scanlator = current.scanlator.ifBlank { incoming.scanlator },
         position = maxOf(current.position, incoming.position),
         readAt = maxOf(current.readAt, incoming.readAt),
         dateUpload = maxOf(current.dateUpload, incoming.dateUpload),

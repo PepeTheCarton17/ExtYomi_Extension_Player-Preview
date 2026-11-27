@@ -4,6 +4,23 @@ Está en **Más → Ajustes → Seguimiento → Sincronización entre dispositiv
 biblioteca (favoritos, categorías, progreso e historial) entre dos o más instalaciones de ExtYomi.
 Los archivos descargados **no** se sincronizan.
 
+## Qué se sincroniza
+
+- Títulos de la biblioteca (con fuente y URL estables), carátula, favoritos y fecha de alta.
+- Estado de la obra (`status`) y última actualización conocida (`lastUpdate`), para que el estado
+  de "actualizado/finalizado" coincida en ambos dispositivos.
+- Capítulos/episodios: vistos o leídos, marcadores, grupos de scanlación, marca de relleno,
+  posición, fecha de visionado/lectura, fecha de subida y número de veces visto/leído.
+- Historial (fecha en que se vio o leyó cada capítulo/episodio).
+- Categorías (creación y borrado por nombre).
+- Borrados de la biblioteca (tombstones).
+
+**No se sincronizan** los archivos descargados, ni el resto de ajustes de la app. Hay una opción
+**Sincronizar también algunos ajustes de biblioteca** (desactivada por defecto) que comparte solo
+una lista reducida de preferencias de vista/filtros de biblioteca: modo de lista, orden, pestañas
+y badges de categorías, columnas y filtros de no leído/marcador. El propio interruptor es local a
+cada dispositivo.
+
 ## Emparejamiento manual (misma red)
 
 1. En el dispositivo A, pulsa **Publicar este dispositivo**. Se genera un código de **8 dígitos**

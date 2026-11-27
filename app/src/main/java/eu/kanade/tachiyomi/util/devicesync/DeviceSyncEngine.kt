@@ -16,7 +16,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
-import javax.crypto.SecretKeySpec
+import javax.crypto.spec.SecretKeySpec
 
 enum class DeviceSyncPhase {
     IDLE,
@@ -37,6 +37,7 @@ data class DeviceSyncUiState(
     val endpoint: String = "",
     val candidates: List<DevicePairingMessage> = emptyList(),
     val peers: List<DeviceSyncPeer> = emptyList(),
+    val syncSettings: Boolean = false,
     val pending: Int = 0,
     val lastSyncAt: Long = 0L,
     val error: String? = null,
@@ -73,6 +74,7 @@ object DeviceSyncEngine {
             deviceName = Build.MODEL,
             deviceModel = Build.MODEL,
             peers = config.peers,
+            syncSettings = config.syncSettings,
             pending = requireStore().pendingCount(),
             error = null,
         )
@@ -306,9 +308,39 @@ object DeviceSyncEngine {
                 changed = true
             }
             if (changed) requireStore().saveHashes(hashes)
+
+            if (config.syncSettings) {
+                val now = System.currentTimeMillis()
+                val (filters, settingHashes) = DeviceSyncSettings.collect(
+                    requireStore().loadSettingHashes(),
+                    now,
+                )
+                filters.forEach { filter ->
+                    requireStore().enqueue(
+                        DeviceSyncEvent(
+                            opId = UUID.randomUUID().toString(),
+                            author = config.deviceId,
+                            seq = ++seq,
+                            createdAt = now,
+                            filter = filter,
+                        ),
+                    )
+                }
+                if (filters.isNotEmpty()) requireStore().saveSettingHashes(settingHashes)
+            }
             _state.value = _state.value.copy(pending = requireStore().pendingCount())
         }
         syncNow()
+    }
+
+    /** Optional settings sync is per device and off by default. */
+    suspend fun setSyncSettings(context: Context, enabled: Boolean) {
+        init(context)
+        config = config.copy(syncSettings = enabled)
+        requireStore().saveConfig(config)
+        _state.value = _state.value.copy(syncSettings = enabled)
+        if (!enabled) requireStore().saveSettingHashes(emptyMap())
+        recordLocalChanges()
     }
 
     suspend fun forgetPeer(peerId: String) {
@@ -438,8 +470,9 @@ object DeviceSyncEngine {
                             event.entry?.let { applier.apply(it) }
                             event.filter?.let { filter ->
                                 // Filters are LWW by key and use the same applied cursor as entries.
-                                val applied = requireStore().loadApplied()
+                                val applied = requireStore().loadApplied().toMutableMap()
                                 if (filter.updatedAt > (applied[filter.key] ?: 0L)) {
+                                    if (config.syncSettings) DeviceSyncSettings.apply(filter)
                                     applied[filter.key] = filter.updatedAt
                                     requireStore().saveApplied(applied)
                                 }
@@ -448,7 +481,7 @@ object DeviceSyncEngine {
                         }
                         requireStore().acknowledge(message.from, message.events.map { it.opId })
                         sendEncrypted(
-                            message.toDeviceSyncPeer(),
+                            message.toDeviceSyncPeer().toPairingTarget(),
                             DeviceSyncMessage(
                                 type = "ACK",
                                 from = config.deviceId,

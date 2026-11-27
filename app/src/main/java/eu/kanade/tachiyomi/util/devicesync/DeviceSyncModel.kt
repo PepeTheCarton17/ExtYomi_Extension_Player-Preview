@@ -19,6 +19,9 @@ data class DeviceSyncChapter(
     val name: String = "",
     val seen: Boolean = false,
     val bookmark: Boolean = false,
+    val fillermark: Boolean = false,
+    val count: Long = 0L,
+    val scanlator: String = "",
     val position: Long = 0L,
     val readAt: Long = 0L,
     val dateUpload: Long = 0L,
@@ -38,6 +41,8 @@ data class DeviceSyncEntry(
     val thumbnailUrl: String = "",
     val favorite: Boolean = false,
     val dateAdded: Long = 0L,
+    val lastUpdate: Long = 0L,
+    val status: Long = -1L,
     val updatedAt: Long = 0L,
     val categories: List<String> = emptyList(),
     /** Positive timestamp = category added, negative = removed. LWW per category name. */
@@ -53,6 +58,13 @@ data class DeviceSyncFilter(
     val value: String = "",
     val updatedAt: Long = 0L,
     val deleted: Boolean = false,
+)
+
+/** Typed value carried by an optional settings filter. */
+@Serializable
+data class DeviceSyncSettingValue(
+    val type: String,
+    val value: String,
 )
 
 @Serializable
@@ -134,6 +146,7 @@ data class DeviceSyncConfig(
     val code: String = "",
     val password: String = "",
     val relayUrl: String = "",
+    val syncSettings: Boolean = false,
     val peers: List<DeviceSyncPeer> = emptyList(),
 )
 

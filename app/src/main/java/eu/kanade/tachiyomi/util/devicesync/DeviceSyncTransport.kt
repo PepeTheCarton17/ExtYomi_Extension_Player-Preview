@@ -125,7 +125,7 @@ class DeviceSyncTransport {
         }
     }
 
-    private suspend fun acceptLoop(socket: ServerSocket) {
+    private suspend fun CoroutineScope.acceptLoop(socket: ServerSocket) {
         while (isActive) {
             val connection = runCatching { socket.accept() }.getOrNull() ?: return
             runCatching {
@@ -159,7 +159,7 @@ class DeviceSyncTransport {
         }
     }
 
-    private suspend fun discoveryLoop(socket: DatagramSocket) {
+    private suspend fun CoroutineScope.discoveryLoop(socket: DatagramSocket) {
         val buffer = ByteArray(4096)
         while (isActive) {
             val packet = DatagramPacket(buffer, buffer.size)

@@ -20,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,7 +46,6 @@ import kotlinx.coroutines.launch
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.stringResource
-import tachiyomi.presentation.core.util.collectAsState
 
 /** Lives under Más → Ajustes → Seguimiento, as a nested settings screen. */
 object SettingsDeviceSyncScreen : SearchableSettings {
@@ -69,7 +69,8 @@ object SettingsDeviceSyncScreen : SearchableSettings {
 
         LaunchedEffect(Unit) { DeviceSyncEngine.init(context) }
 
-        val showQr = state.code.length == 8 && state.phase != DeviceSyncPhase.IDLE &&
+        val showQr = state.code.length == 8 &&
+            state.phase != DeviceSyncPhase.IDLE &&
             state.phase != DeviceSyncPhase.JOIN_WAITING_PASSWORD
         val qrBitmap = remember(showQr, state.code, state.endpoint, relay) {
             if (!showQr) {
@@ -95,6 +96,17 @@ object SettingsDeviceSyncScreen : SearchableSettings {
                     Column(Modifier.fillMaxWidth().padding(horizontal = MaterialTheme.padding.medium)) {
                         Text(stringResource(MR.strings.pref_device_sync_summary))
                         Text(stringResource(MR.strings.device_sync_ack_info))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = state.syncSettings,
+                                onCheckedChange = { enabled ->
+                                    scope.launch {
+                                        DeviceSyncEngine.setSyncSettings(context, enabled)
+                                    }
+                                },
+                            )
+                            Text(stringResource(MR.strings.device_sync_settings_toggle))
+                        }
                         Spacer(Modifier.height(8.dp))
 
                         OutlinedTextField(

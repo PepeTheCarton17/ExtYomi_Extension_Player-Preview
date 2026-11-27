@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.encodeToString
 import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
@@ -21,6 +22,7 @@ class DeviceSyncStore(context: Context) {
     private val hashesFile = File(root, "hashes.json")
     private val acksFile = File(root, "acks.json")
     private val categoriesFile = File(root, "categories.json")
+    private val settingHashesFile = File(root, "setting-hashes.json")
     private val appliedFile = File(root, "applied.json")
     private val mutex = Mutex()
 
@@ -62,6 +64,16 @@ class DeviceSyncStore(context: Context) {
 
     suspend fun saveCategoryVersions(versions: Map<String, Map<String, Long>>) = withLock {
         write(categoriesFile, deviceSyncJson.encodeToString(versions))
+    }
+
+    suspend fun loadSettingHashes(): Map<String, String> = withLock {
+        runCatching {
+            deviceSyncJson.decodeFromString<Map<String, String>>(read(settingHashesFile).orEmpty())
+        }.getOrDefault(emptyMap())
+    }
+
+    suspend fun saveSettingHashes(hashes: Map<String, String>) = withLock {
+        write(settingHashesFile, deviceSyncJson.encodeToString(hashes))
     }
 
     /** Newest remote timestamp applied to each entry, so old events cannot overwrite new data. */
@@ -139,7 +151,7 @@ class DeviceSyncStore(context: Context) {
             chapters = entry.chapters.map { it.copy(updatedAt = 0L) },
         )
         val bytes = MessageDigest.getInstance("SHA-256")
-            .digest(normalized.toJson().toByteArray())
+            .digest(deviceSyncJson.encodeToString(normalized).toByteArray())
         bytes.joinToString("") { "%02x".format(it.toInt() and 0xff) }
     }
 

@@ -111,7 +111,7 @@ class DeviceQrScannerScreen(private val onResult: (String) -> Unit) : Screen {
 
     private fun decode(image: ImageProxy): String? {
         val plane = image.planes.firstOrNull() ?: return null
-        val width = plane.width
+        val width = image.width
         val height = image.height
         val rowStride = plane.rowStride
         val buffer = plane.buffer

@@ -719,6 +719,7 @@
     <string name="device_sync_paste_qr">Paste QR code</string>
     <string name="device_sync_camera_permission">Allow camera</string>
     <string name="device_sync_ack_info">Sync files are deleted only after every paired device confirms them.</string>
+    <string name="device_sync_settings_toggle">Also sync some library settings (optional, off by default)</string>
 
       <!-- Advanced section -->
     <string name="label_network">Networking</string>

@@ -845,6 +845,7 @@
     <string name="device_sync_paste_qr">Pegar código QR</string>
     <string name="device_sync_camera_permission">Permitir cámara</string>
     <string name="device_sync_ack_info">Los archivos de sincronización se borran solo después de que todos los dispositivos vinculados los confirman.</string>
+    <string name="device_sync_settings_toggle">Sincronizar también algunos ajustes de biblioteca (opcional, desactivado por defecto)</string>
     <string name="information_cloudflare_help">Toca aquí para solucionar problemas de acceso con Cloudflare</string>
     <string name="download_cache_invalidated">Se ha borrado el índice de descargas</string>
     <string name="track_activity_name">Iniciar sesión en el servicio</string>

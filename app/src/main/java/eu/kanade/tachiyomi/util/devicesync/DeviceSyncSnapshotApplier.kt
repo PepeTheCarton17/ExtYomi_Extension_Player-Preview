@@ -70,7 +70,15 @@ class DeviceSyncSnapshotApplier(
             anime = animeRepository.getAnimeById(id)
         }
         if (newer) {
-            animeRepository.updateAnime(AnimeUpdate(id = anime.id, favorite = !entry.deleted && entry.favorite))
+            animeRepository.updateAnime(
+                AnimeUpdate(
+                    id = anime.id,
+                    favorite = !entry.deleted && entry.favorite,
+                    title = entry.title.ifBlank { null },
+                    lastUpdate = entry.lastUpdate.takeIf { it > 0L },
+                    status = entry.status.takeIf { it >= 0L },
+                ),
+            )
             val categoryIds = if (entry.deleted) {
                 emptyList()
             } else {
@@ -100,6 +108,8 @@ class DeviceSyncSnapshotApplier(
                         sourceOrder = index.toLong(),
                         seen = chapter.seen,
                         bookmark = chapter.bookmark,
+                        fillermark = chapter.fillermark,
+                        scanlator = chapter.scanlator.ifBlank { null },
                         lastSecondSeen = chapter.position,
                         dateUpload = chapter.dateUpload,
                     )
@@ -116,12 +126,20 @@ class DeviceSyncSnapshotApplier(
                     id = episode.id,
                     seen = episode.seen || incoming.seen,
                     bookmark = episode.bookmark || incoming.bookmark,
+                    fillermark = episode.fillermark || incoming.fillermark,
                     lastSecondSeen = maxOf(episode.lastSecondSeen, incoming.position),
+                    scanlator = incoming.scanlator.ifBlank { null },
                 )
             },
         )
         current.forEach { episode ->
             val incoming = entry.chapters.firstOrNull { it.itemKey == episode.url.ifBlank { episode.name } }
+            val missingCount = (incoming?.count ?: 0L) - episode.watchCount
+            if (missingCount > 0L) {
+                repeat(missingCount.coerceAtMost(1000L).toInt()) {
+                    episodeRepository.incrementWatchCount(episode.id)
+                }
+            }
             val readAt = incoming?.readAt ?: 0L
             if (readAt > (history[episode.id]?.seenAt?.time ?: 0L)) {
                 animeHistoryRepository.upsertAnimeHistory(
@@ -150,7 +168,13 @@ class DeviceSyncSnapshotApplier(
         }
         if (newer) {
             mangaRepository.updateManga(
-                MangaUpdate(id = manga.id, favorite = !entry.deleted && entry.favorite),
+                MangaUpdate(
+                    id = manga.id,
+                    favorite = !entry.deleted && entry.favorite,
+                    title = entry.title.ifBlank { null },
+                    lastUpdate = entry.lastUpdate.takeIf { it > 0L },
+                    status = entry.status.takeIf { it >= 0L },
+                ),
             )
             val ids = if (entry.deleted) {
                 emptyList()
@@ -204,6 +228,7 @@ class DeviceSyncSnapshotApplier(
                         bookmark = chapter.bookmark,
                         lastPageRead = chapter.position,
                         dateUpload = chapter.dateUpload,
+                        scanlator = chapter.scanlator.ifBlank { null },
                     )
                 },
             )
@@ -219,11 +244,18 @@ class DeviceSyncSnapshotApplier(
                     read = chapter.read || incoming.seen,
                     bookmark = chapter.bookmark || incoming.bookmark,
                     lastPageRead = maxOf(chapter.lastPageRead, incoming.position),
+                    scanlator = incoming.scanlator.ifBlank { null },
                 )
             },
         )
         current.forEach { chapter ->
             val incoming = entry.chapters.firstOrNull { it.itemKey == chapter.url.ifBlank { chapter.name } }
+            val missingCount = (incoming?.count ?: 0L) - chapter.readCount
+            if (missingCount > 0L) {
+                repeat(missingCount.coerceAtMost(1000L).toInt()) {
+                    chapterRepository.incrementReadCount(chapter.id)
+                }
+            }
             val readAt = incoming?.readAt ?: 0L
             if (readAt > (history[chapter.id]?.readAt?.time ?: 0L)) {
                 mangaHistoryRepository.upsertMangaHistory(
