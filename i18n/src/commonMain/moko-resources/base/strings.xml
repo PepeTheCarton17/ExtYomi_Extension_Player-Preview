@@ -714,7 +714,8 @@
     <string name="device_sync_peers">Paired devices</string>
     <string name="device_sync_sync_now">Sync now</string>
     <string name="device_sync_forget">Forget</string>
-    <string name="device_sync_pending">Pending changes: %1$d</string>
+    <string name="device_sync_outgoing">Changes to send: %1$d</string>
+    <string name="device_sync_incoming">Changes to receive: %1$d</string>
     <string name="device_sync_relay">Relay server (optional, for different networks)</string>
     <string name="device_sync_paste_qr">Paste QR code</string>
     <string name="device_sync_camera_permission">Allow camera</string>
@@ -734,6 +735,7 @@
     <string name="device_sync_show_password">Show password</string>
     <string name="device_sync_relay_hint">Included in the link; the other device does not need to configure it.</string>
     <string name="device_sync_bad_invite">Invalid link or code.</string>
+    <string name="device_sync_password_hint">The password is not in the QR or the link. Copy it from the other device.</string>
     <string name="device_sync_wsa_host_hint">This device is behind NAT (Windows Subsystem for Android/emulator), so the other device cannot connect here. Publish from the phone instead and scan its QR here. Replies are collected automatically.</string>
     <string name="device_sync_wsa_join_hint">This device is behind NAT (Windows Subsystem for Android/emulator). Keep this screen open: confirmations and sync replies are collected automatically over this connection.</string>
 

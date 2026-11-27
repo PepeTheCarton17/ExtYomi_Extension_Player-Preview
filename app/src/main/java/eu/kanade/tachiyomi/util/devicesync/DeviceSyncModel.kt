@@ -24,6 +24,8 @@ data class DeviceSyncChapter(
     val scanlator: String = "",
     val position: Long = 0L,
     val readAt: Long = 0L,
+    /** When the chapter was discovered locally; drives the "Actualizaciones" list on the peer. */
+    val dateFetch: Long = 0L,
     val dateUpload: Long = 0L,
     val updatedAt: Long = 0L,
 ) {
@@ -86,6 +88,28 @@ data class DeviceSyncEvent(
     val filter: DeviceSyncFilter? = null,
     val snapshot: DeviceSyncSnapshot? = null,
 )
+
+/**
+ * Splits events before serialization. A single envelope with thousands of entries made
+ * `Json.encodeToString` try to allocate ~129 MB in one array and crashed the app.
+ */
+internal fun List<DeviceSyncEvent>.batched(maxEvents: Int, maxChars: Int): List<List<DeviceSyncEvent>> {
+    val batches = mutableListOf<List<DeviceSyncEvent>>()
+    val current = mutableListOf<DeviceSyncEvent>()
+    var chars = 0
+    forEach { event ->
+        val size = runCatching { event.toJson().length }.getOrDefault(0)
+        if (current.isNotEmpty() && (current.size >= maxEvents || chars + size > maxChars)) {
+            batches += current.toList()
+            current.clear()
+            chars = 0
+        }
+        current += event
+        chars += size
+    }
+    if (current.isNotEmpty()) batches += current.toList()
+    return batches
+}
 
 /** Pairing metadata travels in the clear: it contains no secret and no library data. */
 @Serializable

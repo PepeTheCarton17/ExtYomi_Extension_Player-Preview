@@ -111,13 +111,19 @@ object SettingsDeviceSyncScreen : SearchableSettings {
         val unconfirmed = pendingConfirmations.filter { it.from !in state.confirmedCandidates }
 
         val badInvite = stringResource(MR.strings.device_sync_bad_invite)
-        fun join(text: String) {
+        fun join(text: String, autofill: Boolean = false) {
             val parsed = DevicePairing.decodeInvite(text)
             if (parsed == null) {
                 inviteError = badInvite
                 return
             }
             inviteError = null
+            if (autofill) {
+                // The QR carries the relay and the invite, but deliberately NOT the password:
+                // it is the second factor of the encryption and must be entered out-of-band.
+                inviteInput = text
+                if (parsed.relayUrl.isNotBlank()) relay = parsed.relayUrl
+            }
             scope.launch { DeviceSyncEngine.startJoinWithInvite(context, parsed) }
         }
 
@@ -125,7 +131,7 @@ object SettingsDeviceSyncScreen : SearchableSettings {
             DeviceQrScannerResult.pending.collect { text ->
                 if (text != null) {
                     DeviceQrScannerResult.consume()
-                    join(text)
+                    join(text, autofill = true)
                 }
             }
         }
@@ -322,6 +328,7 @@ object SettingsDeviceSyncScreen : SearchableSettings {
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth(),
                             )
+                            Text(stringResource(MR.strings.device_sync_password_hint))
                             Button(
                                 onClick = { scope.launch { DeviceSyncEngine.submitPassword(password) } },
                                 modifier = Modifier.fillMaxWidth(),
@@ -345,7 +352,8 @@ object SettingsDeviceSyncScreen : SearchableSettings {
                                 }
                             }
                         }
-                        Text(stringResource(MR.strings.device_sync_pending, state.pending))
+                        Text(stringResource(MR.strings.device_sync_outgoing, state.outgoingPending))
+                        Text(stringResource(MR.strings.device_sync_incoming, state.incomingPending))
                         Button(
                             onClick = { scope.launch { DeviceSyncEngine.recordLocalChanges() } },
                             modifier = Modifier.fillMaxWidth(),

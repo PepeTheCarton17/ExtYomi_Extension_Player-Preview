@@ -44,7 +44,10 @@ data class DeviceSyncUiState(
     val peers: List<DeviceSyncPeer> = emptyList(),
     val syncDeviceSettings: Boolean = false,
     val natHint: Boolean = false,
-    val pending: Int = 0,
+    /** Own changes that have not been confirmed by every paired device yet. */
+    val outgoingPending: Int = 0,
+    /** Remote changes received on this device but not applied yet. */
+    val incomingPending: Int = 0,
     val lastSyncAt: Long = 0L,
     val error: String? = null,
 )
@@ -57,9 +60,20 @@ object DeviceSyncEngine {
             "(sin aislamiento de punto de acceso). Si uno es WSA/emulador, publica desde el teléfono " +
             "y escanea su QR desde WSA; las respuestas se recogen automáticamente."
 
+    // One envelope with thousands of entries tried to allocate ~129 MB in a single char array
+    // and crashed the app. Every message below is bounded well under that limit.
+    private const val MAX_EVENTS_PER_BATCH = 24
+    private const val MAX_CHARS_PER_BATCH = 256_000
+    private const val MAX_BATCHES_PER_TICK = 32
+    private const val MAX_INBOX_PER_DRAIN = 48
+    private const val MAX_ACKS_PER_MESSAGE = 500
+    private const val MAX_MESSAGE_CHARS = 400_000
+    private const val MAX_ENVELOPE_CHARS = 800_000
+
     private val transport = DeviceSyncTransport()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val syncMutex = Mutex()
+    private val inboxMutex = Mutex()
     private val _state = MutableStateFlow(DeviceSyncUiState())
     val state = _state.asStateFlow()
 
@@ -95,12 +109,29 @@ object DeviceSyncEngine {
             syncDeviceSettings = config.syncDeviceSettings,
             natHint = DeviceSyncNat.isVirtualAndroid(Build.MANUFACTURER, Build.MODEL, Build.BRAND),
             relayUrl = config.relayUrl,
-            pending = requireStore().pendingCount(),
+            outgoingPending = requireStore().outgoingPending(),
+            incomingPending = requireStore().inboxCount(),
             error = null,
         )
-        // After a restart we are neither host nor joiner, but ACKs and host replies may still be
-        // waiting in the other device's mailbox. Keep collecting and draining them automatically.
+        // After a restart we are neither host nor joiner. The password is stored only on this
+        // device, so derive the key again and restart the transport; otherwise both outboxes
+        // stay frozen forever because syncNow() exits on a null key.
+        if (key == null && config.password.isNotBlank() && config.code.isNotBlank()) {
+            key = DeviceSyncCrypto.deriveKey(config.code, config.password)
+            if (isHost) {
+                _state.value = _state.value.copy(
+                    password = config.password,
+                    passwordVisible = true,
+                    phase = DeviceSyncPhase.HOST_PASSWORD_READY,
+                )
+            }
+        }
+        // ACKs and host replies may still be waiting in the other device's mailbox. Keep
+        // collecting and draining them automatically after a restart.
         if (config.peers.isNotEmpty()) {
+            transport.relayUrl = config.relayUrl
+            transport.start()
+            if (collector?.isActive != true) watchMessages()
             ensurePollLoop()
             ensureSyncLoop()
         }
@@ -289,6 +320,10 @@ object DeviceSyncEngine {
             return
         }
         key = DeviceSyncCrypto.deriveKey(target.code, normalized)
+        // Keep the secret in app-private storage so a restart can derive the key again. It is
+        // never sent over the network and never added to the QR/invite.
+        config = config.copy(code = target.code, password = normalized)
+        requireStore().saveConfig(config)
         val message = DeviceSyncMessage(
             type = "VERIFY",
             from = config.deviceId,
@@ -335,31 +370,89 @@ object DeviceSyncEngine {
 
     suspend fun syncNow() = withContext(Dispatchers.IO) {
         syncMutex.withLock {
-            val activeKey = key ?: return@withLock
+            if (key == null) return@withLock
             val peers = requireStore().loadConfig().peers
             if (peers.isEmpty()) return@withLock
-            val events = requireStore().outboxEvents()
             val delivered = mutableListOf<Boolean>()
             peers.forEach { peer ->
-                val message = DeviceSyncMessage(
-                    type = if (events.isEmpty()) "HEARTBEAT" else "EVENTS",
-                    from = config.deviceId,
-                    to = peer.deviceId,
-                    endpoint = transport.endpoint,
-                    endpoints = transport.endpoints,
-                    events = events,
-                    sentAt = System.currentTimeMillis(),
-                )
-                delivered += sendEncrypted(peer.toPairingTarget(), message)
+                val target = peer.toPairingTarget()
+                var cursor: String? = null
+                var batches = 0
+                while (batches < MAX_BATCHES_PER_TICK) {
+                    val events = requireStore().outboxBatch(
+                        cursor,
+                        MAX_EVENTS_PER_BATCH,
+                        MAX_CHARS_PER_BATCH,
+                    )
+                    if (events.isEmpty()) break
+                    val message = DeviceSyncMessage(
+                        type = "EVENTS",
+                        from = config.deviceId,
+                        to = peer.deviceId,
+                        endpoint = transport.endpoint,
+                        endpoints = transport.endpoints,
+                        events = events,
+                        sentAt = System.currentTimeMillis(),
+                    )
+                    val ok = sendEncrypted(target, message)
+                    delivered += ok
+                    // A failed batch stays in the outbox; retry it on the next tick instead of
+                    // advancing past it and silently losing those changes.
+                    if (!ok) break
+                    cursor = events.last().opId
+                    batches++
+                }
+                if (batches == 0) {
+                    delivered += sendEncrypted(
+                        target,
+                        DeviceSyncMessage(
+                            type = "HEARTBEAT",
+                            from = config.deviceId,
+                            to = peer.deviceId,
+                            endpoint = transport.endpoint,
+                            endpoints = transport.endpoints,
+                            sentAt = System.currentTimeMillis(),
+                        ),
+                    )
+                }
             }
-            val ok = delivered.any { it }
+            flushPendingAcks(peers)
+            refreshCounts(peers)
+            val ok = delivered.isNotEmpty() && delivered.all { it }
             _state.value = _state.value.copy(
-                peers = peers,
-                pending = events.size,
                 lastSyncAt = if (ok) System.currentTimeMillis() else _state.value.lastSyncAt,
                 error = if (ok) null else NO_PATH_ERROR,
             )
         }
+    }
+
+    /** Retries ACKs whose first delivery failed, aggregated to stay inside the mailbox cap. */
+    private suspend fun flushPendingAcks(peers: List<DeviceSyncPeer>) {
+        peers.forEach { peer ->
+            val ops = requireStore().pendingAcks(peer.deviceId, MAX_ACKS_PER_MESSAGE)
+            if (ops.isEmpty()) return@forEach
+            val ok = sendEncrypted(
+                peer.toPairingTarget(),
+                DeviceSyncMessage(
+                    type = "ACK",
+                    from = config.deviceId,
+                    to = peer.deviceId,
+                    endpoint = transport.endpoint,
+                    endpoints = transport.endpoints,
+                    acks = ops,
+                    sentAt = System.currentTimeMillis(),
+                ),
+            )
+            if (ok) requireStore().removePendingAcks(peer.deviceId, ops)
+        }
+    }
+
+    private suspend fun refreshCounts(peers: List<DeviceSyncPeer>) {
+        _state.value = _state.value.copy(
+            peers = peers,
+            outgoingPending = requireStore().outgoingPending(),
+            incomingPending = requireStore().inboxCount(),
+        )
     }
 
     /** Coalesced entry point used by library/category observers in [android.app.Application]. */
@@ -443,7 +536,7 @@ object DeviceSyncEngine {
                 )
             }
             if (filters.isNotEmpty()) requireStore().saveSettingHashes(settingHashes)
-            _state.value = _state.value.copy(pending = requireStore().pendingCount())
+            refreshCounts(requireStore().loadConfig().peers)
         }
         syncNow()
     }
@@ -571,6 +664,8 @@ object DeviceSyncEngine {
                 }
             }
             "/sync" -> {
+                // Reject an oversized body before Base64/JSON decoding allocates a huge char array.
+                if (body.length > MAX_ENVELOPE_CHARS) return
                 val envelope = runCatching { body.toDeviceSyncEnvelope() }.getOrNull() ?: return
                 if (envelope.from == config.deviceId) return
                 val activeKey = key ?: return
@@ -647,34 +742,16 @@ object DeviceSyncEngine {
                         recordLocalChanges()
                     }
                     "EVENTS" -> {
-                        val applier = DeviceSyncSnapshotApplier(requireStore())
-                        message.events.forEach { event ->
-                            event.entry?.let { applier.apply(it) }
-                            event.filter?.let { filter ->
-                                // Filters are LWW by key and use the same applied cursor as entries.
-                                val applied = requireStore().loadApplied().toMutableMap()
-                                if (filter.updatedAt > (applied[filter.key] ?: 0L)) {
-                                    DeviceSyncSettings.apply(filter, config.syncDeviceSettings)
-                                    applied[filter.key] = filter.updatedAt
-                                    requireStore().saveApplied(applied)
-                                }
-                            }
-                            event.snapshot?.entries?.forEach { applier.apply(it) }
-                        }
-                        requireStore().acknowledge(message.from, message.events.map { it.opId })
-                        sendEncrypted(
-                            message.toDeviceSyncPeer().toPairingTarget(),
-                            DeviceSyncMessage(
-                                type = "ACK",
-                                from = config.deviceId,
-                                to = message.from,
-                                endpoint = transport.endpoint,
-                                endpoints = transport.endpoints,
-                                acks = message.events.map { it.opId },
-                            ),
-                        )
+                        // Persist first, apply in bounded chunks later. This keeps the receive
+                        // counter honest and means a crash mid-apply cannot lose remote changes.
+                        requireStore().enqueueIncoming(message.from, message.events)
+                        refreshCounts(requireStore().loadConfig().peers)
+                        drainInbox()
                     }
-                    "ACK" -> requireStore().acknowledge(message.from, message.acks)
+                    "ACK" -> {
+                        requireStore().acknowledge(message.from, message.acks)
+                        refreshCounts(requireStore().loadConfig().peers)
+                    }
                     "HEARTBEAT" -> Unit
                 }
             }
@@ -698,8 +775,69 @@ object DeviceSyncEngine {
         syncJob = scope.launch {
             while (isActive) {
                 delay(5_000L)
-                if (_state.value.phase == DeviceSyncPhase.PAIRED) syncNow()
+                if (_state.value.phase == DeviceSyncPhase.PAIRED) {
+                    runCatching { drainInbox() }
+                    syncNow()
+                }
             }
+        }
+    }
+
+    /**
+     * Applies a bounded number of received events. Only applied events are ACKed, so an event is
+     * never dropped before its data made it into the local database.
+     */
+    private suspend fun drainInbox() = withContext(Dispatchers.IO) {
+        inboxMutex.withLock {
+            val batch = requireStore().inboxBatch(MAX_INBOX_PER_DRAIN)
+            if (batch.isEmpty()) return@withLock
+            val applier = DeviceSyncSnapshotApplier(requireStore())
+            val acksByPeer = mutableMapOf<String, MutableList<String>>()
+            val appliedOps = mutableListOf<String>()
+            batch.forEach { incoming ->
+                val event = incoming.event
+                val applied = runCatching {
+                    event.entry?.let { applier.apply(it) }
+                    event.filter?.let { filter ->
+                        // Filters are LWW by key and use the same applied cursor as entries.
+                        val appliedFilters = requireStore().loadApplied().toMutableMap()
+                        if (filter.updatedAt > (appliedFilters[filter.key] ?: 0L)) {
+                            DeviceSyncSettings.apply(filter, config.syncDeviceSettings)
+                            appliedFilters[filter.key] = filter.updatedAt
+                            requireStore().saveApplied(appliedFilters)
+                        }
+                    }
+                    event.snapshot?.entries?.forEach { applier.apply(it) }
+                }.isSuccess
+                // A failed event stays in the inbox for the next tick and is not acknowledged.
+                if (applied) {
+                    appliedOps += event.opId
+                    acksByPeer.getOrPut(incoming.from) { mutableListOf() }.add(event.opId)
+                }
+            }
+            requireStore().dropIncoming(appliedOps)
+            acksByPeer.forEach { (peerId, opIds) ->
+                val target = requireStore().loadConfig().peers
+                    .firstOrNull { it.deviceId == peerId }?.toPairingTarget()
+                val ok = if (target != null) {
+                    sendEncrypted(
+                        target,
+                        DeviceSyncMessage(
+                            type = "ACK",
+                            from = config.deviceId,
+                            to = peerId,
+                            endpoint = transport.endpoint,
+                            endpoints = transport.endpoints,
+                            acks = opIds,
+                            sentAt = System.currentTimeMillis(),
+                        ),
+                    )
+                } else {
+                    false
+                }
+                if (!ok) requireStore().addPendingAcks(peerId, opIds)
+            }
+            refreshCounts(requireStore().loadConfig().peers)
         }
     }
 
@@ -787,7 +925,13 @@ object DeviceSyncEngine {
 
     private suspend fun sendEncrypted(target: DevicePairingMessage, message: DeviceSyncMessage): Boolean {
         val activeKey = key ?: return false
-        val (iv, ciphertext) = DeviceSyncCrypto.encrypt(message.toJson(), activeKey)
+        val plaintext = message.toJson()
+        if (plaintext.length > MAX_MESSAGE_CHARS) {
+            _state.value =
+                _state.value.copy(error = "Mensaje de sincronización demasiado grande; se dividirá en el próximo ciclo")
+            return false
+        }
+        val (iv, ciphertext) = DeviceSyncCrypto.encrypt(plaintext, activeKey)
         val envelope = DeviceSyncEnvelope(
             type = message.type,
             from = config.deviceId,
@@ -832,14 +976,5 @@ object DeviceSyncEngine {
         endpoint = endpoint,
         endpoints = endpoints,
         code = code,
-    )
-
-    private fun DeviceSyncMessage.toDeviceSyncPeer() = DeviceSyncPeer(
-        deviceId = from,
-        name = deviceName,
-        model = deviceModel,
-        endpoint = endpoint,
-        endpoints = endpoints,
-        code = config.code,
     )
 }

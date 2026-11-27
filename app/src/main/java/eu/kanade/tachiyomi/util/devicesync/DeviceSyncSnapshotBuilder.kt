@@ -74,6 +74,7 @@ class DeviceSyncSnapshotBuilder(
                         scanlator = episode.scanlator.orEmpty(),
                         position = episode.lastSecondSeen,
                         readAt = history[episode.id]?.seenAt?.time ?: 0L,
+                        dateFetch = episode.dateFetch,
                         dateUpload = episode.dateUpload,
                         updatedAt = now,
                     )
@@ -138,6 +139,7 @@ class DeviceSyncSnapshotBuilder(
                         scanlator = chapter.scanlator.orEmpty(),
                         position = chapter.lastPageRead,
                         readAt = history[chapter.id]?.readAt?.time ?: 0L,
+                        dateFetch = chapter.dateFetch,
                         dateUpload = chapter.dateUpload,
                         updatedAt = now,
                     )
