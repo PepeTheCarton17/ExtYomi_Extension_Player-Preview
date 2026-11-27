@@ -105,7 +105,7 @@ class DeviceSyncStore(context: Context) {
      * delete outbox files as soon as every peer confirms, which made a file-name cursor restart
      * from the beginning and never reach later events.
      */
-    suspend fun outboxBatch(
+    internal suspend fun outboxBatch(
         cursor: OutboxCursor?,
         maxEvents: Int,
         maxChars: Int,
@@ -118,9 +118,9 @@ class DeviceSyncStore(context: Context) {
             .nextBatch(maxEvents, maxChars)
     }
 
-    suspend fun outboxCursor(peerId: String): OutboxCursor? = withLock { readCursors()[peerId] }
+    internal suspend fun outboxCursor(peerId: String): OutboxCursor? = withLock { readCursors()[peerId] }
 
-    suspend fun saveOutboxCursor(peerId: String, cursor: OutboxCursor) = withLock {
+    internal suspend fun saveOutboxCursor(peerId: String, cursor: OutboxCursor) = withLock {
         val cursors = readCursors()
         cursors[peerId] = cursor
         write(cursorsFile, deviceSyncJson.encodeToString(cursors))
