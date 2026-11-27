@@ -2,6 +2,7 @@ package eu.kanade.presentation.more.settings.screen
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.util.Size
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -10,11 +11,16 @@ import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,21 +32,43 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import cafe.adriel.voyager.core.screen.Screen
+import cafe.adriel.voyager.navigator.LocalNavigator
+import cafe.adriel.voyager.navigator.currentOrThrow
+import com.google.zxing.BarcodeFormat
 import com.google.zxing.BinaryBitmap
+import com.google.zxing.DecodeHintType
 import com.google.zxing.MultiFormatReader
 import com.google.zxing.PlanarYUVLuminanceSource
 import com.google.zxing.common.HybridBinarizer
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
 
-/** QR scanner with an explicit scan button; decoding also tolerates rotated frames. */
-class DeviceQrScannerScreen(private val onResult: (String) -> Unit) : Screen {
+/**
+ * Voyager saves screens in the activity Bundle, so the screen must stay a stateless singleton.
+ * The decoded value travels through this flow instead of a non-serializable callback.
+ */
+object DeviceQrScannerResult {
+    private val _pending = MutableStateFlow<String?>(null)
+    val pending = _pending.asStateFlow()
+    fun submit(text: String) {
+        _pending.value = text
+    }
+    fun consume() {
+        _pending.value = null
+    }
+}
+
+/** QR scanner with a visible targeting frame, auto-detection and an explicit scan button. */
+object DeviceQrScannerScreen : Screen {
 
     override val key: String = "device_qr_scanner"
 
@@ -48,6 +76,7 @@ class DeviceQrScannerScreen(private val onResult: (String) -> Unit) : Screen {
     override fun Content() {
         val context = LocalContext.current
         val lifecycleOwner = LocalLifecycleOwner.current
+        val navigator = LocalNavigator.currentOrThrow
         var granted by remember {
             mutableStateOf(
                 ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
@@ -59,7 +88,12 @@ class DeviceQrScannerScreen(private val onResult: (String) -> Unit) : Screen {
         ) { granted = it }
 
         if (!granted) {
-            Column(Modifier.fillMaxSize().padding(ButtonPadding)) {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .navigationBarsPadding()
+                    .padding(ButtonPadding),
+            ) {
                 Button(onClick = { launcher.launch(Manifest.permission.CAMERA) }) {
                     Text(stringResource(MR.strings.device_sync_camera_permission))
                 }
@@ -70,13 +104,22 @@ class DeviceQrScannerScreen(private val onResult: (String) -> Unit) : Screen {
         val previewView = remember { PreviewView(context) }
         val done = remember { mutableStateOf(false) }
         val lastDecoded = remember { mutableStateOf<String?>(null) }
-        val scanRequested = remember { mutableStateOf(false) }
+        var message by remember { mutableStateOf<String?>(null) }
         val analyzer = remember {
             ImageAnalysis.Builder()
+                .setTargetResolution(Size(1280, 720))
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build()
         }
         val mainExecutor = remember { ContextCompat.getMainExecutor(context) }
+        val noQr = stringResource(MR.strings.device_sync_no_qr)
+
+        fun finish(text: String) {
+            if (done.value) return
+            done.value = true
+            DeviceQrScannerResult.submit(text)
+            if (navigator.canPop) navigator.pop()
+        }
 
         LaunchedEffect(Unit) {
             val future = ProcessCameraProvider.getInstance(context)
@@ -87,22 +130,11 @@ class DeviceQrScannerScreen(private val onResult: (String) -> Unit) : Screen {
                         cameraPreview.setSurfaceProvider(previewView.surfaceProvider)
                     }
                     analyzer.setAnalyzer(mainExecutor) { image ->
-                        val decoded = if (lastDecoded.value != null && !scanRequested.value) {
-                            lastDecoded.value
-                        } else {
-                            runCatching { decode(image) }.getOrNull()
-                        }
+                        val decoded = runCatching { decode(image) }.getOrNull()
                         image.close()
                         if (decoded != null) {
                             lastDecoded.value = decoded
-                        } else {
-                            lastDecoded.value = null
-                            scanRequested.value = false
-                        }
-                        if (scanRequested.value && decoded != null && !done.value) {
-                            done.value = true
-                            scanRequested.value = false
-                            onResult(decoded)
+                            finish(decoded)
                         }
                     }
                     runCatching {
@@ -125,16 +157,31 @@ class DeviceQrScannerScreen(private val onResult: (String) -> Unit) : Screen {
 
         Box(Modifier.fillMaxSize()) {
             AndroidView({ previewView }, modifier = Modifier.fillMaxSize())
+            Box(
+                modifier = Modifier
+                    .size(ScanFrameSize)
+                    .align(Alignment.Center)
+                    .border(BorderStroke(2.dp, Color.White), RoundedCornerShape(12.dp)),
+            )
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
+                    .navigationBarsPadding()
                     .padding(ButtonPadding),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(stringResource(MR.strings.device_sync_scan_hint))
+                message?.let { Text(it) }
                 Button(
-                    onClick = { scanRequested.value = true },
+                    onClick = {
+                        val decoded = lastDecoded.value
+                        if (decoded != null && !done.value) {
+                            finish(decoded)
+                        } else {
+                            message = noQr
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(stringResource(MR.strings.device_sync_scan))
@@ -149,14 +196,18 @@ class DeviceQrScannerScreen(private val onResult: (String) -> Unit) : Screen {
         val height = image.height
         val data = ByteArray(width * height)
         for (y in 0 until height) {
-            bufferPosition(plane.buffer, y * plane.rowStride)
+            plane.buffer.position(y * plane.rowStride)
             plane.buffer.get(data, y * width, width)
         }
+        val hints = mapOf(
+            DecodeHintType.TRY_HARDER to true,
+            DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE),
+        )
         // ZXing is sensitive to rotation; try all four orientations of the Y plane.
         listOf(0, 90, 180, 270).forEach { degrees ->
             val (bytes, decodedWidth, decodedHeight) = rotate(data, width, height, degrees)
             val result = runCatching {
-                MultiFormatReader().decode(
+                MultiFormatReader().apply { setHints(hints) }.decode(
                     BinaryBitmap(
                         HybridBinarizer(
                             PlanarYUVLuminanceSource(
@@ -176,10 +227,6 @@ class DeviceQrScannerScreen(private val onResult: (String) -> Unit) : Screen {
             if (result != null) return result.text
         }
         return null
-    }
-
-    private fun bufferPosition(buffer: java.nio.ByteBuffer, position: Int) {
-        buffer.position(position)
     }
 
     private fun rotate(
@@ -212,5 +259,6 @@ class DeviceQrScannerScreen(private val onResult: (String) -> Unit) : Screen {
 
     private companion object {
         val ButtonPadding = 16.dp
+        val ScanFrameSize = 260.dp
     }
 }

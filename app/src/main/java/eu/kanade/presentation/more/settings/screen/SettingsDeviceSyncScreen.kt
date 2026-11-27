@@ -47,6 +47,7 @@ import eu.kanade.tachiyomi.util.devicesync.DevicePairing
 import eu.kanade.tachiyomi.util.devicesync.DevicePairingQr
 import eu.kanade.tachiyomi.util.devicesync.DeviceSyncEngine
 import eu.kanade.tachiyomi.util.devicesync.DeviceSyncPhase
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.padding
@@ -106,6 +107,15 @@ object SettingsDeviceSyncScreen : SearchableSettings {
             }
             inviteError = null
             scope.launch { DeviceSyncEngine.startJoinWithInvite(context, parsed) }
+        }
+
+        LaunchedEffect(Unit) {
+            DeviceQrScannerResult.pending.collect { text ->
+                if (text != null) {
+                    DeviceQrScannerResult.consume()
+                    join(text)
+                }
+            }
         }
 
         return listOf(
@@ -210,9 +220,7 @@ object SettingsDeviceSyncScreen : SearchableSettings {
 
                         Spacer(Modifier.height(16.dp))
                         Button(
-                            onClick = {
-                                navigator.push(DeviceQrScannerScreen { text -> join(text) })
-                            },
+                            onClick = { navigator.push(DeviceQrScannerScreen) },
                             enabled = !pairingBusy,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
