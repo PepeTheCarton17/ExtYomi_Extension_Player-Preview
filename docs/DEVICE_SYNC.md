@@ -34,19 +34,23 @@ automáticamente. El propio interruptor es local a cada dispositivo.
 2. En B, escanea ese QR (hay un botón **Escanear QR**) o pega el enlace en el único campo
    **Pega el enlace o el código de 8 dígitos** y pulsa **Unirse**. También funciona un código suelto
    de 8 dígitos si ambos dispositivos están en la misma LAN.
-3. B envía la confirmación directamente al endpoint (o al relay) que viene dentro del enlace, así
-   que A la recibe sin depender de broadcasts, y reintenta cada 3 s con fallback por UDP. A confirma
-   automáticamente al primer dispositivo, le muestra a B el mensaje **Código confirmado** y revela
-   su contraseña aleatoria de **10 letras**. Si se unen más dispositivos, A puede seleccionar cuáles
+3. El enlace/QR incluye **todas** las direcciones LAN de A (Wi‑Fi, hotspot, VPN…), no solo una. B
+   envía la confirmación al relay si hay uno y, si no, la intenta contra cada dirección hasta que
+   una responde; solo si todas fallan usa el broadcast UDP como última chance y avisa con
+   **No se pudo contactar con el otro dispositivo…**. Reintenta cada 3 s. A confirma automáticamente
+   al primer dispositivo, le muestra a B el mensaje **Código confirmado** y revela su contraseña
+   aleatoria de **10 letras o números**. Si se unen más dispositivos, A puede seleccionar cuáles
    confirmar antes de mostrar la contraseña.
 4. **Si el mensaje de confirmación no llega** (redes distintas, endpoint inalcanzable, A sigue
    «Esperando a que el otro dispositivo confirme el código»), pulsa **Mostrar contraseña** en A.
    Es un botón manual porque el aviso de confirmación es «best effort» y puede perderse. B muestra
    mientras tanto **Esperando a que el primer dispositivo confirme**.
-5. En B, escribe esa contraseña y pulsa el botón de contraseña. Quedan vinculados: para A basta con
-   que el mensaje cifrado se descifre con el código y la contraseña, así que no hace falta que haya
-   recibido la confirmación previa. Por eso A «detecta» el dispositivo en cuanto B envía la
-   contraseña correcta.
+5. En B, escribe esa contraseña (acepta letras y números; no hay 0, 1, I ni O) y pulsa el botón de
+   contraseña. El **VERIFY cifrado también se reintenta** contra todas las direcciones mientras
+   B espera, de modo que un primer envío fallido no deja la contraseña manual sin efecto. Quedan
+   vinculados: para A basta con que el mensaje cifrado se descifre con el código y la contraseña,
+   así que no hace falta que haya recibido la confirmación previa. Por eso A «detecta» el dispositivo
+   en cuanto B envía la contraseña correcta.
 
 ## Relay (redes distintas)
 
@@ -64,7 +68,8 @@ puedan alcanzarse por la LAN (o que el endpoint publicado sea accesible).
 
 ## Cifrado y borrado por ACK
 
-- La clave se deriva con PBKDF2‑HMAC‑SHA256 del código de 8 dígitos y la contraseña de 10 letras.
+- La clave se deriva con PBKDF2‑HMAC‑SHA256 del código de 8 dígitos y la contraseña de 10 letras
+  o números del alfabeto `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`.
   Cada mensaje se cifra con AES‑256‑GCM y un IV aleatorio. La contraseña **nunca** viaja por la red.
 - Cada cambio se guarda como un evento pequeño en `device-sync/outbox/`.
 - El receptor aplica el evento y devuelve un ACK con el `opId`.

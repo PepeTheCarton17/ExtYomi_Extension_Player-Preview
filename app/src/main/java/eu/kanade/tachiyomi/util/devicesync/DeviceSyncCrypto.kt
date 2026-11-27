@@ -71,7 +71,7 @@ object DeviceBase64 {
 
 /**
  * End-to-end encryption for library data. The key comes from the 8-digit session code and the
- * 10-letter password shown by the first device; the password is never sent over the network.
+ * 10-character password shown by the first device; the password is never sent over the network.
  */
 object DeviceSyncCrypto {
     private const val ITERATIONS = 120_000

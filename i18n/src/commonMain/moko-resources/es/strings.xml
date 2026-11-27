@@ -832,7 +832,7 @@
     <string name="device_sync_join_qr">Escanear código QR</string>
     <string name="device_sync_join_manual">Emparejar manualmente</string>
     <string name="device_sync_code">Código de sesión (8 dígitos)</string>
-    <string name="device_sync_password">Contraseña (10 letras)</string>
+    <string name="device_sync_password">Contraseña (10 letras o números)</string>
     <string name="device_sync_confirm_devices">Confirmar dispositivos seleccionados</string>
     <string name="device_sync_reveal_password">Contraseña para el segundo dispositivo</string>
     <string name="device_sync_waiting_code">Esperando a que el otro dispositivo confirme el código</string>

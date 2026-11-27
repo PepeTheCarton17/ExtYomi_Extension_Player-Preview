@@ -14,6 +14,8 @@ data class DevicePairingQr(
     val model: String = "",
     val endpoint: String = "",
     val relayUrl: String = "",
+    /** Every LAN address of the host, so the joiner can skip an unreachable virtual adapter. */
+    val endpoints: List<String> = emptyList(),
 )
 
 /** Session codes and pairing secrets, generated locally and never transmitted as secrets. */
@@ -30,10 +32,13 @@ object DevicePairing {
         repeat(8) { append(('0'.code + random.nextInt(10)).toChar()) }
     }
 
-    /** 10 random letters shown by the first device only after the code is confirmed. */
+    /** 10 random letters/digits (no 0, 1, I or O), shown by the first device. */
     fun newPassword(): String = buildString(10) {
         repeat(10) { append(PASSWORD_ALPHABET[random.nextInt(PASSWORD_ALPHABET.length)]) }
     }
+
+    /** Single place used by both the generator and the password field, so they cannot diverge. */
+    fun isPasswordChar(value: Char): Boolean = value.uppercaseChar() in PASSWORD_ALPHABET
 
     fun encodeQr(qr: DevicePairingQr): String = QR_PREFIX + encodePayload(qr)
 

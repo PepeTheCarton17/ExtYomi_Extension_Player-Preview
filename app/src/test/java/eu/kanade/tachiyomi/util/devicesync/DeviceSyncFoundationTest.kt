@@ -42,12 +42,27 @@ class DeviceSyncFoundationTest {
     }
 
     @Test
+    fun `password field accepts the same alphabet the generator uses`() {
+        "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".forEach { char ->
+            assertTrue(DevicePairing.isPasswordChar(char), char.toString())
+            assertTrue(DevicePairing.isPasswordChar(char.lowercaseChar()), char.toString())
+        }
+        listOf('0', '1', 'I', 'O', '-', ' ', 'ñ').forEach { char ->
+            assertFalse(DevicePairing.isPasswordChar(char), char.toString())
+        }
+        repeat(20) {
+            assertTrue(DevicePairing.newPassword().all(DevicePairing::isPasswordChar))
+        }
+    }
+
+    @Test
     fun `qr payload survives a round trip and rejects foreign codes`() {
         val qr = DevicePairingQr(
             code = "12345678",
             name = "Mi ExtYomi",
             model = "Pixel 8",
             endpoint = "192.168.1.10:8787",
+            endpoints = listOf("192.168.1.10:8787", "10.0.0.5:8787"),
             relayUrl = "https://relay.example.com",
         )
         val decoded = DevicePairing.decodeQr(DevicePairing.encodeQr(qr))
@@ -62,6 +77,7 @@ class DeviceSyncFoundationTest {
             name = "Mi ExtYomi",
             model = "Pixel 8",
             endpoint = "192.168.1.10:8787",
+            endpoints = listOf("192.168.1.10:8787", "10.0.0.5:8787"),
             relayUrl = "https://relay.example.com",
         )
         val invite = DevicePairing.encodeInvite(qr)
@@ -80,16 +96,40 @@ class DeviceSyncFoundationTest {
     }
 
     @Test
-    fun `pairing messages keep the relay so the reply uses the same channel`() {
+    fun `pairing messages keep the relay and every address so the reply can reach us`() {
         val confirm = DevicePairingMessage(
             type = "CODE_CONFIRM",
             from = "second-device",
             code = "12345678",
+            endpoint = "192.168.1.11:8787",
+            endpoints = listOf("192.168.1.11:8787", "10.0.0.9:8787"),
             relayUrl = "https://relay.example.com",
             to = "first-device",
         )
 
         assertEquals(confirm, confirm.toJson().toDevicePairingMessage())
+    }
+
+    @Test
+    fun `sync messages keep alternate addresses for VERIFY retries`() {
+        val verify = DeviceSyncMessage(
+            type = "VERIFY",
+            from = "second-device",
+            endpoint = "192.168.1.11:8787",
+            endpoints = listOf("192.168.1.11:8787", "10.0.0.9:8787"),
+        )
+        val peer = DeviceSyncPeer(
+            deviceId = "second-device",
+            name = "Second",
+            model = "Pixel",
+            endpoint = verify.endpoint,
+            endpoints = verify.endpoints,
+            code = "12345678",
+        )
+
+        val config = DeviceSyncConfig(code = "12345678", peers = listOf(peer))
+        assertEquals(verify.endpoints, verify.toJson().toDeviceSyncMessage().endpoints)
+        assertEquals(peer.endpoints, config.toJson().toDeviceSyncConfig().peers.single().endpoints)
     }
 
     @Test
