@@ -824,6 +824,28 @@
     <string name="standalone_sync_failed">No se pudo sincronizar</string>
     <string name="standalone_sync_error_detail">No se pudo sincronizar: %1$s</string>
     <string name="pref_standalone_auto_sync">Sincronización automática con standalone</string>
+
+    <!-- Sincronización entre dispositivos -->
+    <string name="pref_device_sync">Sincronización entre dispositivos</string>
+    <string name="pref_device_sync_summary">Vincula dos dispositivos ExtYomi y mantén sus bibliotecas sincronizadas</string>
+    <string name="device_sync_host_start">Publicar este dispositivo</string>
+    <string name="device_sync_join_qr">Escanear código QR</string>
+    <string name="device_sync_join_manual">Emparejar manualmente</string>
+    <string name="device_sync_code">Código de sesión (8 dígitos)</string>
+    <string name="device_sync_password">Contraseña (10 letras)</string>
+    <string name="device_sync_confirm_devices">Confirmar dispositivos seleccionados</string>
+    <string name="device_sync_reveal_password">Contraseña para el segundo dispositivo</string>
+    <string name="device_sync_waiting_code">Esperando a que el otro dispositivo confirme el código</string>
+    <string name="device_sync_select_device">Selecciona los dispositivos a confirmar</string>
+    <string name="device_sync_peers">Dispositivos vinculados</string>
+    <string name="device_sync_sync_now">Sincronizar ahora</string>
+    <string name="device_sync_forget">Olvidar</string>
+    <string name="device_sync_pending">Cambios pendientes: %1$d</string>
+    <string name="device_sync_relay">Servidor relay (opcional, para redes distintas)</string>
+    <string name="device_sync_paste_qr">Pegar código QR</string>
+    <string name="device_sync_camera_permission">Permitir cámara</string>
+    <string name="device_sync_ack_info">Los archivos de sincronización se borran solo después de que todos los dispositivos vinculados los confirman.</string>
+    <string name="device_sync_settings_toggle">Sincronizar también algunos ajustes de biblioteca (opcional, desactivado por defecto)</string>
     <string name="information_cloudflare_help">Toca aquí para solucionar problemas de acceso con Cloudflare</string>
     <string name="download_cache_invalidated">Se ha borrado el índice de descargas</string>
     <string name="track_activity_name">Iniciar sesión en el servicio</string>

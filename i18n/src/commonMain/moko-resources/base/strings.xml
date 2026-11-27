@@ -699,6 +699,28 @@
     <string name="standalone_sync_error_detail">Standalone sync failed: %1$s</string>
     <string name="pref_standalone_auto_sync">Automatic standalone sync</string>
 
+    <!-- Device-to-device sync -->
+    <string name="pref_device_sync">Sync between devices</string>
+    <string name="pref_device_sync_summary">Pair two ExtYomi devices and keep their libraries in sync</string>
+    <string name="device_sync_host_start">Publish this device</string>
+    <string name="device_sync_join_qr">Scan QR code</string>
+    <string name="device_sync_join_manual">Pair manually</string>
+    <string name="device_sync_code">Session code (8 digits)</string>
+    <string name="device_sync_password">Password (10 letters)</string>
+    <string name="device_sync_confirm_devices">Confirm selected devices</string>
+    <string name="device_sync_reveal_password">Password for the second device</string>
+    <string name="device_sync_waiting_code">Waiting for the other device to confirm the code</string>
+    <string name="device_sync_select_device">Select the devices to confirm</string>
+    <string name="device_sync_peers">Paired devices</string>
+    <string name="device_sync_sync_now">Sync now</string>
+    <string name="device_sync_forget">Forget</string>
+    <string name="device_sync_pending">Pending changes: %1$d</string>
+    <string name="device_sync_relay">Relay server (optional, for different networks)</string>
+    <string name="device_sync_paste_qr">Paste QR code</string>
+    <string name="device_sync_camera_permission">Allow camera</string>
+    <string name="device_sync_ack_info">Sync files are deleted only after every paired device confirms them.</string>
+    <string name="device_sync_settings_toggle">Also sync some library settings (optional, off by default)</string>
+
       <!-- Advanced section -->
     <string name="label_network">Networking</string>
     <string name="pref_clear_cookies">Clear cookies</string>
