@@ -845,9 +845,12 @@
     <string name="device_sync_paste_qr">Pegar código QR</string>
     <string name="device_sync_camera_permission">Permitir cámara</string>
     <string name="device_sync_ack_info">Los archivos de sincronización se borran solo después de que todos los dispositivos vinculados los confirman.</string>
-    <string name="device_sync_settings_toggle">Sincronizar también algunos ajustes de biblioteca (opcional, desactivado por defecto)</string>
+    <string name="device_sync_settings_toggle">Sincronizar también ajustes del dispositivo (decodificador, visor, reproductor y avanzadas; desactivado por defecto)</string>
+    <string name="device_sync_device_settings_title">¿Sincronizar ajustes del dispositivo?</string>
+    <string name="device_sync_device_settings_warning">Los ajustes del decodificador, visor, reproductor interno y avanzados se copiarán entre los dispositivos vinculados. Sus valores dependen de los códecs, la pantalla y los controles de cada equipo, por eso están desactivados por defecto. Los ajustes de biblioteca siempre se sincronizan.</string>
     <string name="device_sync_scan">Escanear QR</string>
-    <string name="device_sync_scan_hint">Apunta al código QR y pulsa Escanear.</string>
+    <string name="device_sync_scan_hint">Apunta al código QR dentro del recuadro; se detecta automáticamente.</string>
+    <string name="device_sync_no_qr">Aún no se detectó ningún código QR.</string>
     <string name="device_sync_invite">Enlace de emparejamiento</string>
     <string name="device_sync_copy_invite">Copiar enlace</string>
     <string name="device_sync_paste_invite">Pega el enlace o el código de 8 dígitos</string>

@@ -13,12 +13,14 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.ReadOnlyComposable
@@ -47,6 +49,7 @@ import eu.kanade.tachiyomi.util.devicesync.DevicePairing
 import eu.kanade.tachiyomi.util.devicesync.DevicePairingQr
 import eu.kanade.tachiyomi.util.devicesync.DeviceSyncEngine
 import eu.kanade.tachiyomi.util.devicesync.DeviceSyncPhase
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.padding
@@ -71,6 +74,7 @@ object SettingsDeviceSyncScreen : SearchableSettings {
         var inviteInput by rememberSaveable { mutableStateOf("") }
         var inviteError by rememberSaveable { mutableStateOf<String?>(null) }
         var password by rememberSaveable { mutableStateOf("") }
+        var confirmDeviceSettings by rememberSaveable { mutableStateOf(false) }
 
         LaunchedEffect(Unit) { DeviceSyncEngine.init(context) }
 
@@ -108,6 +112,40 @@ object SettingsDeviceSyncScreen : SearchableSettings {
             scope.launch { DeviceSyncEngine.startJoinWithInvite(context, parsed) }
         }
 
+        LaunchedEffect(Unit) {
+            DeviceQrScannerResult.pending.collect { text ->
+                if (text != null) {
+                    DeviceQrScannerResult.consume()
+                    join(text)
+                }
+            }
+        }
+
+        if (confirmDeviceSettings) {
+            AlertDialog(
+                onDismissRequest = { confirmDeviceSettings = false },
+                title = { Text(stringResource(MR.strings.device_sync_device_settings_title)) },
+                text = { Text(stringResource(MR.strings.device_sync_device_settings_warning)) },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            confirmDeviceSettings = false
+                            scope.launch {
+                                DeviceSyncEngine.setSyncDeviceSettings(context, true)
+                            }
+                        },
+                    ) {
+                        Text(stringResource(MR.strings.action_ok))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { confirmDeviceSettings = false }) {
+                        Text(stringResource(MR.strings.action_cancel))
+                    }
+                },
+            )
+        }
+
         return listOf(
             Preference.PreferenceItem.CustomPreference(
                 title = stringResource(MR.strings.pref_device_sync),
@@ -123,9 +161,15 @@ object SettingsDeviceSyncScreen : SearchableSettings {
                         Text(stringResource(MR.strings.device_sync_ack_info))
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(
-                                checked = state.syncSettings,
+                                checked = state.syncDeviceSettings,
                                 onCheckedChange = { enabled ->
-                                    scope.launch { DeviceSyncEngine.setSyncSettings(context, enabled) }
+                                    if (enabled) {
+                                        confirmDeviceSettings = true
+                                    } else {
+                                        scope.launch {
+                                            DeviceSyncEngine.setSyncDeviceSettings(context, false)
+                                        }
+                                    }
                                 },
                             )
                             Text(stringResource(MR.strings.device_sync_settings_toggle))
@@ -210,9 +254,7 @@ object SettingsDeviceSyncScreen : SearchableSettings {
 
                         Spacer(Modifier.height(16.dp))
                         Button(
-                            onClick = {
-                                navigator.push(DeviceQrScannerScreen { text -> join(text) })
-                            },
+                            onClick = { navigator.push(DeviceQrScannerScreen) },
                             enabled = !pairingBusy,
                             modifier = Modifier.fillMaxWidth(),
                         ) {

@@ -146,7 +146,7 @@ data class DeviceSyncConfig(
     val code: String = "",
     val password: String = "",
     val relayUrl: String = "",
-    val syncSettings: Boolean = false,
+    val syncDeviceSettings: Boolean = false,
     val peers: List<DeviceSyncPeer> = emptyList(),
 )
 
