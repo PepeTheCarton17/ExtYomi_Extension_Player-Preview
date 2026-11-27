@@ -59,7 +59,7 @@ internal fun HostFeedSettingsDialog(
     onTogglePopular: () -> Unit,
     onToggleAutoScrollHero: () -> Unit,
     onSetItemsPerSection: (Int) -> Unit,
-    onBlockedCategoriesChanged: (Set<String>) -> Unit,
+    onEnabledCategoriesChanged: (Set<String>) -> Unit,
     onCategoryOrderChanged: (List<String>) -> Unit,
     onSortChanged: (HomeFeedSort) -> Unit,
     onSourcesChanged: () -> Unit,
@@ -173,7 +173,7 @@ internal fun HostFeedSettingsDialog(
                     1 -> FeedFilterTab(
                         state = state,
                         uiPreferences = uiPreferences,
-                        onBlockedCategoriesChanged = onBlockedCategoriesChanged,
+                        onEnabledCategoriesChanged = onEnabledCategoriesChanged,
                         onCategoryOrderChanged = onCategoryOrderChanged,
                     )
                     2 -> Column(modifier = Modifier.padding(top = 8.dp)) {
@@ -234,20 +234,30 @@ private fun HostSwitchRow(
 private fun FeedFilterTab(
     state: StandaloneFeedScreenModel.State,
     uiPreferences: UiPreferences,
-    onBlockedCategoriesChanged: (Set<String>) -> Unit,
+    onEnabledCategoriesChanged: (Set<String>) -> Unit,
     onCategoryOrderChanged: (List<String>) -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
-    val blocked = remember { uiPreferences.homeFeedBlockedCategories().get().toMutableSet() }
+    val enabledPreference = remember { uiPreferences.homeFeedEnabledCategories() }
+    // An unset preference means the update's first run: only the nine defaults are active.
+    var enabled by remember {
+        mutableStateOf(
+            if (enabledPreference.isSet()) {
+                enabledPreference.get()
+            } else {
+                StandaloneFeedScreenModel.DEFAULT_HOST_CATEGORIES.toSet()
+            },
+        )
+    }
     val savedOrder = remember {
         uiPreferences.homeFeedCategoryOrder().get()
             .split(',')
             .map { it.trim() }
             .filter { it.isNotBlank() }
     }
-    val allCategories = remember(state.availableCategories, savedOrder, blocked) {
+    val allCategories = remember(state.availableCategories, savedOrder, enabled) {
         (
-            state.availableCategories + savedOrder + blocked +
+            state.availableCategories + savedOrder + enabled +
                 StandaloneFeedScreenModel.DEFAULT_HOST_CATEGORIES
             ).distinctBy { it.lowercase() }
     }
@@ -284,7 +294,7 @@ private fun FeedFilterTab(
         ) {
             items(items = local, key = { it }) { category ->
                 if (!category.contains(query, ignoreCase = true)) return@items
-                val isBlocked = category in blocked
+                val isActive = enabled.any { it.equals(category, ignoreCase = true) }
                 ReorderableItem(reorderState, key = category) {
                     Row(
                         modifier = Modifier
@@ -304,18 +314,22 @@ private fun FeedFilterTab(
                             modifier = Modifier.weight(1f),
                             style = MaterialTheme.typography.bodyMedium,
                         )
-                        if (isBlocked) {
+                        if (!isActive) {
                             Text(
-                                text = stringResource(MR.strings.home_feed_category_blocked),
+                                text = stringResource(MR.strings.home_feed_category_inactive),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         Checkbox(
-                            checked = !isBlocked,
-                            onCheckedChange = { enabled ->
-                                if (enabled) blocked.remove(category) else blocked.add(category)
-                                onBlockedCategoriesChanged(blocked.toSet())
+                            checked = isActive,
+                            onCheckedChange = { checked ->
+                                enabled = if (checked) {
+                                    enabled + category
+                                } else {
+                                    enabled.filterNot { it.equals(category, ignoreCase = true) }.toSet()
+                                }
+                                onEnabledCategoriesChanged(enabled)
                             },
                         )
                     }

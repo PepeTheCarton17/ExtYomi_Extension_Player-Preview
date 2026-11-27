@@ -5,6 +5,7 @@ import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import eu.kanade.domain.entries.anime.model.toDomainAnime
 import eu.kanade.domain.entries.manga.model.toDomainManga
+import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.domain.ui.model.ContentFormat
@@ -57,6 +58,7 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
 
     private val dataSource = HomeFeedDataSource()
     private val uiPreferences: UiPreferences = Injekt.get()
+    private val sourcePreferences: SourcePreferences = Injekt.get()
     private val getAnimeHistory: GetAnimeHistory = Injekt.get()
     private val getMangaHistory: GetMangaHistory = Injekt.get()
     private val animeSourceManager: AnimeSourceManager = Injekt.get()
@@ -352,6 +354,9 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
                                     format = "",
                                     genres = anime.getGenres().orEmpty(),
                                     available = true,
+                                    sourceId = source.id,
+                                    sourceKind = ref.kind,
+                                    sourceLang = ref.lang,
                                     contentFormats = HomeFeedFormatMetadata.detect(
                                         source,
                                         anime.getGenres().orEmpty(),
@@ -381,6 +386,9 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
                                     format = "",
                                     genres = manga.getGenres().orEmpty(),
                                     available = true,
+                                    sourceId = source.id,
+                                    sourceKind = ref.kind,
+                                    sourceLang = ref.lang,
                                     contentFormats = HomeFeedFormatMetadata.detect(
                                         source,
                                         manga.getGenres().orEmpty(),
@@ -452,7 +460,12 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
     // Host (ExtYomi): AniList only suggests; the enabled extensions decide what exists.
     // ---------------------------------------------------------------------------
 
-    private data class HostSource(val id: Long, val name: String, val kind: String)
+    private data class HostSource(
+        val id: Long,
+        val name: String,
+        val kind: String,
+        val lang: String = "",
+    )
 
     private suspend fun refreshHost(continueList: List<ContinueItem>) {
         val sources = hostSources()
@@ -473,28 +486,37 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
             }
         }
 
-        val blocked = uiPreferences.homeFeedBlockedCategories().get()
+        val enabledPreference = uiPreferences.homeFeedEnabledCategories()
+        // Unset means a fresh install: only the nine defaults are active. Once the user saves the
+        // filter, that set is authoritative (it can be empty).
+        val enabledCategories = if (enabledPreference.isSet()) {
+            enabledPreference.get()
+        } else {
+            DEFAULT_HOST_CATEGORIES.toSet()
+        }
+        val normalizedEnabled = enabledCategories.map(::normalized).toSet()
         val savedOrder = uiPreferences.homeFeedCategoryOrder().get()
             .split(',')
             .map { it.trim() }
             .filter { it.isNotBlank() }
-        val available = (DEFAULT_HOST_CATEGORIES + support.keys)
+        val discovered = (DEFAULT_HOST_CATEGORIES + support.keys + enabledCategories + savedOrder)
             .distinctBy(::normalized)
-            .filterNot { it in blocked }
-        val orderedCategories = buildList {
+        val allCategories = buildList {
             savedOrder.forEach { saved ->
-                available.firstOrNull { normalized(it) == normalized(saved) }?.let(::add)
+                discovered.firstOrNull { normalized(it) == normalized(saved) }?.let(::add)
             }
-            available.forEach { name ->
+            discovered.forEach { name ->
                 if (none { normalized(it) == normalized(name) }) add(name)
             }
         }.distinctBy(::normalized)
+        val activeCategories = allCategories.filter { normalized(it) in normalizedEnabled }
 
         // First visible state: history is already in place, categories are known and no network
         // call has happened yet. The UI can compose while the rows are generated below.
         mutableState.update { state ->
             state.copy(
-                availableCategories = orderedCategories,
+                availableCategories = allCategories,
+                activeCategories = activeCategories,
                 feedRows = emptyList(),
                 sectionPages = mapOf(
                     SECTION_TRENDING to FeedPagination(1, false),
@@ -505,7 +527,7 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
         }
         yield()
 
-        val tasks = buildHostRowTasks(sources, support, orderedCategories)
+        val tasks = buildHostRowTasks(sources, support, activeCategories)
         val firstRows = tasks.take(FIRST_HOST_ROWS).mapNotNull { task ->
             runCatching { task() }.onFailure { error ->
                 logcat(LogPriority.WARN, error) { "Skipped a Home row after a source error" }
@@ -609,12 +631,18 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
     /** Installed, enabled sources in the user's own priority order, independent of migration/player. */
     private fun hostSources(): List<HostSource> {
         if (isStandalone) return emptyList()
-        val anime = animeSourceManager.getCatalogueSources().map { HostSource(it.id, it.name, KIND_ANIME) }
+        // The Home follows the same language filter as Browse/Extensions: a disabled language is
+        // not a Home source, even if its extension is installed.
+        val enabledLanguages = sourcePreferences.enabledLanguages().get()
+        val anime = animeSourceManager.getCatalogueSources()
+            .filter { it.lang in enabledLanguages }
+            .map { HostSource(it.id, it.name, KIND_ANIME, it.lang) }
         val mangaSources = mangaSourceManager.getCatalogueSources()
+            .filter { it.lang in enabledLanguages }
         val manga = mangaSources.filterNot { NovelSourceCompat.isNovelSource(it) }
-            .map { HostSource(it.id, it.name, KIND_MANGA) }
+            .map { HostSource(it.id, it.name, KIND_MANGA, it.lang) }
         val novel = mangaSources.filter { NovelSourceCompat.isNovelSource(it) }
-            .map { HostSource(it.id, it.name, KIND_NOVEL) }
+            .map { HostSource(it.id, it.name, KIND_NOVEL, it.lang) }
 
         return HOST_KINDS.flatMap { kind ->
             val refs = when (kind) {
@@ -731,7 +759,7 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
     private fun buildHostRowTasks(
         sources: List<HostSource>,
         support: Map<String, List<HostSource>>,
-        orderedCategories: List<String>,
+        activeCategories: List<String>,
     ): List<suspend () -> FeedRow?> {
         if (sources.isEmpty()) return emptyList()
 
@@ -739,8 +767,9 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
         val cursors = HOST_KINDS.associateWith { 0 }.toMutableMap()
         val tasks = mutableListOf<suspend () -> FeedRow?>()
 
-        for (index in 0 until MAX_HOST_CATEGORY_ROWS.coerceAtMost(orderedCategories.size)) {
-            val category = orderedCategories[index]
+        // Every active category gets a row; rows are generated progressively so a long list never
+        // delays the first render.
+        activeCategories.forEachIndexed { index, category ->
             val kind = HOST_KINDS[index % HOST_KINDS.size]
             val refs = sources.filter { it.kind == kind }
             if (refs.isEmpty()) continue
@@ -777,6 +806,7 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
                             kind = kind,
                             category = category,
                             sourceId = picked.id,
+                            sourceLang = picked.lang,
                             items = items,
                             hasNextPage = result.second,
                         )
@@ -800,6 +830,7 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
                         kind = ref.kind,
                         sourceId = ref.id,
                         sourceName = ref.name,
+                        sourceLang = ref.lang,
                         items = items,
                         hasNextPage = result.second,
                     )
@@ -848,6 +879,7 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
                                 kind = kind,
                                 format = format,
                                 sourceId = source.id,
+                                sourceLang = source.lang,
                                 items = items,
                                 hasNextPage = hasNext,
                             )
@@ -877,7 +909,7 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
                     result.animes.mapNotNull { anime ->
                         runCatching {
                             val local = networkToLocalAnime.await(anime.toDomainAnime(ref.id))
-                            anime.toSourceFeedItem(local.id).copy(
+                            anime.toSourceFeedItem(local.id, ref.id, KIND_ANIME, ref.lang).copy(
                                 contentFormats = HomeFeedFormatMetadata.detect(
                                     source,
                                     anime.getGenres().orEmpty(),
@@ -897,7 +929,7 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
                     result.mangas.mapNotNull { manga ->
                         runCatching {
                             val local = networkToLocalManga.await(manga.toDomainManga(ref.id))
-                            manga.toSourceFeedItem(local.id).copy(
+                            manga.toSourceFeedItem(local.id, ref.id, ref.kind, ref.lang).copy(
                                 contentFormats = HomeFeedFormatMetadata.detect(
                                     source,
                                     manga.getGenres().orEmpty(),
@@ -924,7 +956,7 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
                     result.animes.mapNotNull { anime ->
                         runCatching {
                             val local = networkToLocalAnime.await(anime.toDomainAnime(ref.id))
-                            anime.toSourceFeedItem(local.id).copy(
+                            anime.toSourceFeedItem(local.id, ref.id, KIND_ANIME, ref.lang).copy(
                                 contentFormats = HomeFeedFormatMetadata.detect(
                                     source,
                                     anime.getGenres().orEmpty(),
@@ -940,7 +972,7 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
                     result.mangas.mapNotNull { manga ->
                         runCatching {
                             val local = networkToLocalManga.await(manga.toDomainManga(ref.id))
-                            manga.toSourceFeedItem(local.id).copy(
+                            manga.toSourceFeedItem(local.id, ref.id, ref.kind, ref.lang).copy(
                                 contentFormats = HomeFeedFormatMetadata.detect(
                                     source,
                                     manga.getGenres().orEmpty(),
@@ -1058,6 +1090,11 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
 
     fun setBlockedCategories(names: Set<String>) {
         uiPreferences.homeFeedBlockedCategories().set(names)
+        refresh()
+    }
+
+    fun setEnabledCategories(names: Set<String>) {
+        uiPreferences.homeFeedEnabledCategories().set(names)
         refresh()
     }
 
@@ -1470,8 +1507,10 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
         val isRefreshing: Boolean = false,
         /** Extra rows generated for the host from categories, sources and content formats. */
         val feedRows: List<FeedRow> = emptyList(),
-        /** Categories offered by the enabled extensions, after order and block rules. */
+        /** Every category offered by the enabled extensions, including inactive ones. */
         val availableCategories: List<String> = emptyList(),
+        /** Categories currently active; only these generate Home rows. */
+        val activeCategories: List<String> = emptyList(),
         val continueVisibleCount: Int = 10,
         val sortMode: HomeFeedSort = HomeFeedSort.NONE,
         val trending: List<FeedItem> = emptyList(),
@@ -1524,6 +1563,7 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
         val format: ContentFormat? = null,
         val sourceId: Long? = null,
         val sourceName: String? = null,
+        val sourceLang: String? = null,
         val items: List<FeedItem> = emptyList(),
         val hasNextPage: Boolean = false,
         val isLoadingMore: Boolean = false,
@@ -1543,6 +1583,12 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
         val available: Boolean? = null,
         /** Local database id of the real extension entry; used to open its detail screen. */
         val localId: Long? = null,
+        /** Numeric source id when the card came from an extension, so its own catalogue can open. */
+        val sourceId: Long? = null,
+        /** Source kind of [sourceId], to choose the correct anime/manga/novel screen. */
+        val sourceKind: String? = null,
+        /** Language of [sourceId], used to label per-language source rows. */
+        val sourceLang: String? = null,
         /** Optional format metadata used by the Películas/Series rows and the Ordenar tab. */
         val contentFormats: Set<ContentFormat> = emptySet(),
         val episodeCount: Int? = null,
@@ -1590,8 +1636,6 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
             "Suspenso",
         )
 
-        // A bounded number of generated rows keeps a first feed refresh from hammering every source.
-        const val MAX_HOST_CATEGORY_ROWS = 12
         const val MAX_HOST_CONTINUE_ENTRIES = 60
 
         fun categoryKey(name: String) = CATEGORY_PREFIX + name
@@ -1637,7 +1681,12 @@ private fun isFormatName(name: String, format: ContentFormat): Boolean = when (f
     else -> false
 }
 
-private fun SAnime.toSourceFeedItem(localId: Long) = StandaloneFeedScreenModel.FeedItem(
+private fun SAnime.toSourceFeedItem(
+    localId: Long,
+    sourceId: Long? = null,
+    sourceKind: String? = null,
+    sourceLang: String? = null,
+) = StandaloneFeedScreenModel.FeedItem(
     id = localId,
     title = title,
     coverUrl = thumbnail_url,
@@ -1648,9 +1697,17 @@ private fun SAnime.toSourceFeedItem(localId: Long) = StandaloneFeedScreenModel.F
     genres = getGenres().orEmpty(),
     available = true,
     localId = localId,
+    sourceId = sourceId,
+    sourceKind = sourceKind,
+    sourceLang = sourceLang,
 )
 
-private fun SManga.toSourceFeedItem(localId: Long) = StandaloneFeedScreenModel.FeedItem(
+private fun SManga.toSourceFeedItem(
+    localId: Long,
+    sourceId: Long? = null,
+    sourceKind: String? = null,
+    sourceLang: String? = null,
+) = StandaloneFeedScreenModel.FeedItem(
     id = localId,
     title = title,
     coverUrl = thumbnail_url,
@@ -1661,6 +1718,9 @@ private fun SManga.toSourceFeedItem(localId: Long) = StandaloneFeedScreenModel.F
     genres = getGenres().orEmpty(),
     available = true,
     localId = localId,
+    sourceId = sourceId,
+    sourceKind = sourceKind,
+    sourceLang = sourceLang,
 )
 
 private fun normalized(title: String): String =
@@ -1738,7 +1798,7 @@ private fun animeCategoryNames(source: AnimeCatalogueSource): List<String> = bui
             else -> Unit
         }
     }
-}.distinct().take(MAX_CATEGORY_FILTERS)
+}.distinct()
 
 private fun mangaCategoryNames(source: CatalogueSource): List<String> = buildList {
     source.safeFilterList().forEach { filter ->
@@ -1767,7 +1827,7 @@ private fun mangaCategoryNames(source: CatalogueSource): List<String> = buildLis
             else -> Unit
         }
     }
-}.distinct().take(MAX_CATEGORY_FILTERS)
+}.distinct()
 
 private fun applyAnimeCategory(filters: AnimeFilterList, name: String): Boolean {
     filters.forEach { filter ->
@@ -1920,5 +1980,3 @@ private fun applyMangaTrending(filters: FilterList, name: String): Boolean {
         else -> false
     }
 }
-
-private const val MAX_CATEGORY_FILTERS = 6

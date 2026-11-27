@@ -58,8 +58,11 @@ class UiPreferences(
         emptySet(),
     )
 
-    // Category filter/reorder state of the new Home. Defaults are used until the user saves an order.
+    // Category filter/reorder state of the new Home. Until the user explicitly saves a set, only
+    // DEFAULT_HOST_CATEGORIES are active; discovered categories are still offered but inactive.
     fun homeFeedBlockedCategories() = preferenceStore.getStringSet("pref_home_feed_blocked_categories", emptySet())
+
+    fun homeFeedEnabledCategories() = preferenceStore.getStringSet("pref_home_feed_enabled_categories", emptySet())
 
     fun homeFeedCategoryOrder() = preferenceStore.getString("pref_home_feed_category_order", "")
 
