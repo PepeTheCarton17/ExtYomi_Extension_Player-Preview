@@ -38,6 +38,8 @@ import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.util.Screen
+import eu.kanade.tachiyomi.extension.anime.AnimeExtensionManager
+import eu.kanade.tachiyomi.extension.manga.MangaExtensionManager
 import eu.kanade.tachiyomi.ui.reader.loader.NovelSourceCompat
 import eu.kanade.tachiyomi.util.system.LocaleHelper
 import sh.calvin.reorderable.ReorderableItem
@@ -66,6 +68,9 @@ class HomeFeedSourcePriorityScreen(private val kind: String) : Screen() {
         val toggleLanguage = remember { Injekt.get<ToggleLanguage>() }
         val animeManager = remember { Injekt.get<AnimeSourceManager>() }
         val mangaManager = remember { Injekt.get<MangaSourceManager>() }
+        // Package lookup lives in the extension managers; the source managers only list sources.
+        val animeExtensionManager = remember { Injekt.get<AnimeExtensionManager>() }
+        val mangaExtensionManager = remember { Injekt.get<MangaExtensionManager>() }
 
         // The same preference used by Extensions. Changing it here adds/removes language variants.
         val enabledLanguages by remember {
@@ -83,7 +88,7 @@ class HomeFeedSourcePriorityScreen(private val kind: String) : Screen() {
                         name = source.name,
                         lang = source.lang,
                         groupKey = homeFeedSourceGroupKey(
-                            animeManager.getExtensionPackage(source.id),
+                            animeExtensionManager.getExtensionPackage(source.id),
                             source.name,
                         ),
                     )
@@ -100,7 +105,7 @@ class HomeFeedSourcePriorityScreen(private val kind: String) : Screen() {
                             name = source.name,
                             lang = source.lang,
                             groupKey = homeFeedSourceGroupKey(
-                                mangaManager.getExtensionPackage(source.id),
+                                mangaExtensionManager.getExtensionPackage(source.id),
                                 source.name,
                             ),
                         )

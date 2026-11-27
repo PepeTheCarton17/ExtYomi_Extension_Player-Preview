@@ -772,7 +772,7 @@ class StandaloneFeedScreenModel : StateScreenModel<StandaloneFeedScreenModel.Sta
         activeCategories.forEachIndexed { index, category ->
             val kind = HOST_KINDS[index % HOST_KINDS.size]
             val refs = sources.filter { it.kind == kind }
-            if (refs.isEmpty()) continue
+            if (refs.isEmpty()) return@forEachIndexed
             val candidates = support[category]?.filter { it.kind == kind }.orEmpty().ifEmpty { refs }
             val startCursor = cursors[kind] ?: 0
             tasks += {
