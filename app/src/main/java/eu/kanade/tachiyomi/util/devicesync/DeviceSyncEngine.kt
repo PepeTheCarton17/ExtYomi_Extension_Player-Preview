@@ -485,6 +485,20 @@ object DeviceSyncEngine {
                     "CONFIRM" -> {
                         if (message.code != joinTarget?.code) return
                         if (message.to.isNotBlank() && message.to != config.deviceId) return
+                        // With a bare 8-digit code there was no endpoint at all; the CONFIRM
+                        // message is the first chance to learn where the host actually lives.
+                        val merged = (joinEndpoints + message.endpoints + message.endpoint)
+                            .map { it.trim() }
+                            .filter { it.isNotBlank() }
+                            .distinct()
+                        if (merged.isNotEmpty()) {
+                            joinEndpoints = merged
+                            joinTarget = joinTarget?.copy(
+                                endpoint = message.endpoint.ifBlank { merged.first() },
+                                endpoints = merged,
+                            )
+                            _state.value = _state.value.copy(endpoints = merged)
+                        }
                         _state.value = _state.value.copy(joinConfirmed = true, error = null)
                     }
                 }
@@ -626,8 +640,9 @@ object DeviceSyncEngine {
         val body = pairing.toJson()
         val attempts = mutableListOf<Result<Unit>>()
         val relay = pairing.relayUrl
+        val endpoints = endpointsOf(target)
         if (relay.isNotBlank()) attempts += transport.relaySend(target.code, "/pairing", body)
-        endpointsOf(target).forEach { endpoint ->
+        endpoints.forEach { endpoint ->
             if (attempts.lastOrNull()?.isSuccess == true) return@forEach
             attempts += transport.send(endpoint, "/pairing", body)
         }
@@ -635,9 +650,12 @@ object DeviceSyncEngine {
             if (_state.value.error == NO_PATH_ERROR) _state.value = _state.value.copy(error = null)
             return
         }
-        // Last chance when a device only allows UDP on the local network.
+        // Last chance when a device only allows UDP on the local network. A bare 8-digit
+        // code has no address at all, so broadcasting is the expected path, not an error.
         transport.broadcast(pairing)
-        _state.value = _state.value.copy(error = NO_PATH_ERROR)
+        if (relay.isNotBlank() || endpoints.isNotEmpty()) {
+            _state.value = _state.value.copy(error = NO_PATH_ERROR)
+        }
     }
 
     private suspend fun sendEncrypted(target: DevicePairingMessage, message: DeviceSyncMessage): Boolean {
