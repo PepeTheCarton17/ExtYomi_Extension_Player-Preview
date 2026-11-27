@@ -35,6 +35,7 @@ class DeviceSyncStore(context: Context) {
     private val categoriesFile = File(root, "categories.json")
     private val settingHashesFile = File(root, "setting-hashes.json")
     private val appliedFile = File(root, "applied.json")
+    private val cursorsFile = File(root, "outbox-cursors.json")
     private val mutex = Mutex()
 
     init {
@@ -100,35 +101,35 @@ class DeviceSyncStore(context: Context) {
     }
 
     /**
-     * Reads only one bounded batch, ordered by the file timestamp so a cursor stays stable even
-     * though ACKs delete files while a sync is in progress. `seq` is process-local and cannot be
-     * used as a persistent cursor after a restart.
+     * Reads one bounded batch. The cursor is carried by the event itself, not by its file: ACKs
+     * delete outbox files as soon as every peer confirms, which made a file-name cursor restart
+     * from the beginning and never reach later events.
      */
-    suspend fun outboxBatch(
-        afterOpId: String?,
+    internal suspend fun outboxBatch(
+        cursor: OutboxCursor?,
         maxEvents: Int,
         maxChars: Int,
     ): List<DeviceSyncEvent> = withLock {
-        val ordered = outbox.listFiles { file -> file.extension == "json" }
+        outbox.listFiles { file -> file.extension == "json" }
             .orEmpty()
-            .sortedWith(compareBy<File> { it.lastModified() }.thenBy { it.name })
-        val start = if (afterOpId.isNullOrBlank()) {
-            0
-        } else {
-            val index = ordered.indexOfFirst { it.nameWithoutExtension == afterOpId }
-            if (index < 0) 0 else index + 1
-        }
-        val batch = mutableListOf<DeviceSyncEvent>()
-        var chars = 0
-        for (file in ordered.subList(start, ordered.size)) {
-            val event = runCatching { read(file)?.toDeviceSyncEvent() }.getOrNull() ?: continue
-            val size = runCatching { event.toJson().length }.getOrDefault(0)
-            if (batch.isNotEmpty() && (batch.size >= maxEvents || chars + size > maxChars)) break
-            batch += event
-            chars += size
-        }
-        batch
+            .mapNotNull { file -> runCatching { read(file)?.toDeviceSyncEvent() }.getOrNull() }
+            .sortedWith(compareBy<DeviceSyncEvent> { it.createdAt }.thenBy { it.opId })
+            .after(cursor)
+            .nextBatch(maxEvents, maxChars)
     }
+
+    internal suspend fun outboxCursor(peerId: String): OutboxCursor? = withLock { readCursors()[peerId] }
+
+    internal suspend fun saveOutboxCursor(peerId: String, cursor: OutboxCursor) = withLock {
+        val cursors = readCursors()
+        cursors[peerId] = cursor
+        write(cursorsFile, deviceSyncJson.encodeToString(cursors))
+    }
+
+    private fun readCursors(): MutableMap<String, OutboxCursor> = runCatching {
+        deviceSyncJson.decodeFromString<Map<String, OutboxCursor>>(read(cursorsFile).orEmpty())
+            .toMutableMap()
+    }.getOrDefault(mutableMapOf())
 
     suspend fun enqueue(event: DeviceSyncEvent) = withLock {
         write(File(outbox, "${event.opId}.json"), event.toJson())
@@ -244,6 +245,9 @@ class DeviceSyncStore(context: Context) {
         val pending = readPendingAcks()
         pending.remove(peerId)
         writePendingAcks(pending)
+        val cursors = readCursors()
+        cursors.remove(peerId)
+        write(cursorsFile, deviceSyncJson.encodeToString(cursors))
     }
 
     suspend fun fingerprint(entry: DeviceSyncEntry): String = withContext(Dispatchers.Default) {

@@ -91,8 +91,9 @@ biblioteca ni la contraseña.
 - Cada cambio se guarda como un evento pequeño en `device-sync/outbox/` y se envía en lotes de como
   máximo 24 eventos / 256 KB de JSON. Un solo evento con miles de capítulos hizo que
   `Json.encodeToString` intentara reservar ~129 MB de una sola vez y tumbara la app; ahora cada
-  sobre cifrado queda por debajo de 1 MB. El cursor de envío es el `opId` del último evento, así
-  que los ACKs pueden borrar archivos mientras se envían los lotes siguientes sin saltarse ninguno.
+  sobre cifrado queda por debajo de 1 MB. El cursor de envío se guarda por dispositivo como
+  `(createdAt, opId)` del último evento; no depende del archivo, así que los ACKs pueden borrarlo
+  sin que el siguiente ciclo vuelva a empezar por el primer lote.
 - El receptor guarda cada evento en `device-sync/inbox/` **antes** de aplicarlo y confirma solo los
   que ha aplicado. Los ACKs se agrupan por dispositivo para no desbordar el buzón. Los ACKs que no
   se pueden entregar se guardan y se reintentan en el siguiente ciclo.
@@ -101,9 +102,14 @@ biblioteca ni la contraseña.
 - La pantalla muestra **Cambios por enviar** (eventos locales sin confirmación de todos) y
   **Cambios por recibir** (eventos remotos guardados en la bandeja y aún no aplicados). No son el
   mismo contador ni tienen por qué coincidir: cada dispositivo mantiene su propia cola.
-- Tras reiniciar se deriva la clave de la contraseña guardada localmente y se reinicia el
-  transporte, de modo que la sincronización no queda congelada. La contraseña sigue sin viajar por
-  la red ni aparecer en el QR.
+- Tras reiniciar se deriva la clave de la contraseña guardada localmente, se restaura el emparejo
+  como **vinculado** y se reinician el transporte, el sondeo del relay y el buzón, sin depender de
+  abrir Ajustes. La dirección del relay del QR también se guarda en el segundo dispositivo.
+  Cualquiera de los dos puede dejar respuestas cifradas en el buzón del otro si la conexión directa
+  falla: el flujo es bidireccional. La contraseña sigue sin viajar por la red ni aparecer en el QR.
+- **Cambios por recibir** se muestra mientras la bandeja se aplica en el siguiente ciclo (5 s); si
+  se aplica todo al instante, el contador vuelve a 0. **Cambios por enviar** baja cuando llegan los
+  ACK de todos los dispositivos, no cuando se envía el lote.
 - Solo queda un cursor de ACK por dispositivo; no se envían instantáneas completas salvo el primer
   emparejamiento y la recuperación.
 

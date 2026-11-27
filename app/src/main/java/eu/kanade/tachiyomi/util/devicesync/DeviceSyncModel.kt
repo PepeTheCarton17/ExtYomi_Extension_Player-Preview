@@ -90,6 +90,38 @@ data class DeviceSyncEvent(
 )
 
 /**
+ * Persistent send cursor. It uses the event itself instead of its outbox file name: ACKs delete
+ * those files as soon as every peer confirms, so a file-based cursor restarted from zero and kept
+ * resending the same batch forever.
+ */
+@Serializable
+internal data class OutboxCursor(val createdAt: Long, val opId: String)
+
+/** Events newer than the cursor, with a stable tie-breaker for events created in the same ms. */
+internal fun List<DeviceSyncEvent>.after(cursor: OutboxCursor?): List<DeviceSyncEvent> =
+    if (cursor == null) {
+        this
+    } else {
+        filter {
+            it.createdAt > cursor.createdAt ||
+                (it.createdAt == cursor.createdAt && it.opId > cursor.opId)
+        }
+    }
+
+/** First bounded slice of a list, used for both tests and the durable outbox. */
+internal fun List<DeviceSyncEvent>.nextBatch(maxEvents: Int, maxChars: Int): List<DeviceSyncEvent> {
+    val batch = mutableListOf<DeviceSyncEvent>()
+    var chars = 0
+    for (event in this) {
+        val size = runCatching { event.toJson().length }.getOrDefault(0)
+        if (batch.isNotEmpty() && (batch.size >= maxEvents || chars + size > maxChars)) break
+        batch += event
+        chars += size
+    }
+    return batch
+}
+
+/**
  * Splits events before serialization. A single envelope with thousands of entries made
  * `Json.encodeToString` try to allocate ~129 MB in one array and crashed the app.
  */
