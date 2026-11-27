@@ -249,6 +249,15 @@ object SettingsDeviceSyncScreen : SearchableSettings {
                             if (state.passwordVisible) {
                                 Text(stringResource(MR.strings.device_sync_reveal_password))
                                 Text(DevicePairing.formatCode(state.password))
+                            } else {
+                                // The CODE_CONFIRM notification is best effort; always give the
+                                // user a way to reveal the password when it never arrives.
+                                OutlinedButton(
+                                    onClick = { DeviceSyncEngine.revealPassword() },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Text(stringResource(MR.strings.device_sync_show_password))
+                                }
                             }
                         }
 
@@ -284,6 +293,8 @@ object SettingsDeviceSyncScreen : SearchableSettings {
                             Spacer(Modifier.height(8.dp))
                             if (state.joinConfirmed) {
                                 Text(stringResource(MR.strings.device_sync_code_confirmed))
+                            } else {
+                                Text(stringResource(MR.strings.device_sync_waiting_confirm))
                             }
                             OutlinedTextField(
                                 value = password,

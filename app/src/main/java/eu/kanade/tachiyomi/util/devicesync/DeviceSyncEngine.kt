@@ -158,7 +158,9 @@ object DeviceSyncEngine {
     suspend fun startJoinWithInvite(context: Context, invite: DevicePairingQr) {
         init(context)
         stop()
-        transport.relayUrl = invite.relayUrl.ifBlank { config.relayUrl }
+        // Use only the relay carried by the invite: a stale local relay would send the
+        // confirmation to a mailbox the host is not polling.
+        transport.relayUrl = invite.relayUrl
         transport.start()
         joinTarget = DevicePairingMessage(
             type = "OFFER",
@@ -183,7 +185,27 @@ object DeviceSyncEngine {
             error = null,
         )
         watchMessages()
-        sendPairing(requireNotNull(joinTarget), "CODE_CONFIRM")
+        val target = requireNotNull(joinTarget)
+        sendPairing(target, "CODE_CONFIRM")
+        // The invite endpoint can be unreachable (different networks, virtual adapters, sleep).
+        // Keep asking until the host confirms, and keep polling the relay for CONFIRM/VERIFY_ACK:
+        // the joiner previously only polled on LAN and stayed stuck when a relay was used.
+        backgroundJobs += scope.launch {
+            while (isActive &&
+                (
+                    _state.value.phase == DeviceSyncPhase.JOIN_WAITING_PASSWORD ||
+                        _state.value.phase == DeviceSyncPhase.JOIN_WAITING_ACK
+                    )
+            ) {
+                delay(3_000L)
+                if (_state.value.phase == DeviceSyncPhase.JOIN_WAITING_PASSWORD &&
+                    !_state.value.joinConfirmed
+                ) {
+                    sendPairing(target, "CODE_CONFIRM")
+                }
+                if (transport.relayUrl.isNotBlank()) pollRelay()
+            }
+        }
     }
 
     /** The first device reveals the password only after confirming at least one device. */
@@ -198,6 +220,15 @@ object DeviceSyncEngine {
             val candidate = _state.value.candidates.firstOrNull { it.from == id } ?: return@forEach
             scope.launch { sendPairing(candidate.copy(to = id, confirmed = true), "CONFIRM") }
         }
+    }
+
+    /** Fallback for when the join request never arrives: the password is the real secret. */
+    fun revealPassword() {
+        if (_state.value.phase != DeviceSyncPhase.HOST_WAITING) return
+        _state.value = _state.value.copy(
+            phase = DeviceSyncPhase.HOST_PASSWORD_READY,
+            passwordVisible = true,
+        )
     }
 
     suspend fun submitPassword(password: String) {
@@ -429,7 +460,10 @@ object DeviceSyncEngine {
                 }.getOrNull() ?: return
                 when (message.type) {
                     "VERIFY" -> {
-                        if (message.from !in confirmedCandidates) return
+                        // Reaching here means the payload decrypted with the code + password.
+                        // That proves possession of the secret, so a separate CODE_CONFIRM/CONFIRM
+                        // round trip is no longer required to trust the device. Delivery of those
+                        // messages is best effort and can fail on real networks.
                         val peers = requireStore().loadConfig().peers.toMutableList()
                         if (peers.none { it.deviceId == message.from }) {
                             peers += DeviceSyncPeer(
@@ -537,15 +571,22 @@ object DeviceSyncEngine {
             deviceModel = Build.MODEL,
             endpoint = transport.endpoint,
             code = target.code,
+            // Carry the relay so the other device replies on the same channel. Without this,
+            // a relay-backed pairing could confirm but never complete the handshake.
+            relayUrl = target.relayUrl.ifBlank { transport.relayUrl },
             to = target.from,
         )
-        when {
+        val sent = when {
             target.relayUrl.isNotBlank() || transport.relayUrl.isNotBlank() ->
                 transport.relaySend(target.code, "/pairing", pairing.toJson())
             target.endpoint.isNotBlank() ->
                 transport.send(target.endpoint, "/pairing", pairing.toJson())
-            else -> transport.broadcast(pairing)
+            else -> {
+                transport.broadcast(pairing)
+                Result.success(Unit)
+            }
         }
+        if (sent.isFailure) transport.broadcast(pairing)
     }
 
     private suspend fun sendEncrypted(target: DevicePairingMessage, message: DeviceSyncMessage) {
