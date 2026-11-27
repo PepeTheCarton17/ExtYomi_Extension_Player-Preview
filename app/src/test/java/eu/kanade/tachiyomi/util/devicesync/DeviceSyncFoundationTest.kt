@@ -107,6 +107,43 @@ class DeviceSyncFoundationTest {
     }
 
     @Test
+    fun `library settings sync always but device settings require consent`() {
+        val libraryKeys = listOf(
+            "pref_display_mode_library",
+            "pref_filter_animelib_unread_v2",
+        )
+        val deviceKeys = listOf(
+            // Decodificador
+            "pref_try_hwdec",
+            "pref_gpu_next",
+            "pref_video_debanding",
+            "use_yuv420p",
+            "wsa_player_defaults_applied",
+            // Reproductor interno
+            "pref_player_speed",
+            "player_fullscreen",
+            "pref_player_statistics_page",
+            "external_player_preference",
+            // Visor / lector
+            "pref_default_reading_mode_key",
+            "pref_reader_theme_key",
+            "reader_navigation_mode_webtoon",
+            // Avanzadas
+            "pref_mpv_conf",
+            "mpv_scripts",
+        )
+
+        libraryKeys.forEach { key ->
+            assertTrue(DeviceSyncSettings.canSync(key, false), key)
+            assertTrue(DeviceSyncSettings.canSync(key, true), key)
+        }
+        deviceKeys.forEach { key ->
+            assertFalse(DeviceSyncSettings.canSync(key, false), key)
+            assertTrue(DeviceSyncSettings.canSync(key, true), key)
+        }
+    }
+
+    @Test
     fun `filters are last write wins per key`() {
         val current = DeviceSyncSnapshot(
             deviceId = "a",

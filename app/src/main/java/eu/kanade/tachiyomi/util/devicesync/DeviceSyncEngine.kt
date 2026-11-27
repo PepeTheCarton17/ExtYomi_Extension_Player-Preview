@@ -40,7 +40,7 @@ data class DeviceSyncUiState(
     val confirmedCandidates: Set<String> = emptySet(),
     val joinConfirmed: Boolean = false,
     val peers: List<DeviceSyncPeer> = emptyList(),
-    val syncSettings: Boolean = false,
+    val syncDeviceSettings: Boolean = false,
     val pending: Int = 0,
     val lastSyncAt: Long = 0L,
     val error: String? = null,
@@ -77,7 +77,7 @@ object DeviceSyncEngine {
             deviceName = Build.MODEL,
             deviceModel = Build.MODEL,
             peers = config.peers,
-            syncSettings = config.syncSettings,
+            syncDeviceSettings = config.syncDeviceSettings,
             relayUrl = config.relayUrl,
             pending = requireStore().pendingCount(),
             error = null,
@@ -310,37 +310,36 @@ object DeviceSyncEngine {
             }
             if (changed) requireStore().saveHashes(hashes)
 
-            if (config.syncSettings) {
-                val now = System.currentTimeMillis()
-                val (filters, settingHashes) = DeviceSyncSettings.collect(
-                    requireStore().loadSettingHashes(),
-                    now,
+            val now = System.currentTimeMillis()
+            val (filters, settingHashes) = DeviceSyncSettings.collect(
+                requireStore().loadSettingHashes(),
+                now,
+                config.syncDeviceSettings,
+            )
+            filters.forEach { filter ->
+                requireStore().enqueue(
+                    DeviceSyncEvent(
+                        opId = UUID.randomUUID().toString(),
+                        author = config.deviceId,
+                        seq = ++seq,
+                        createdAt = now,
+                        filter = filter,
+                    ),
                 )
-                filters.forEach { filter ->
-                    requireStore().enqueue(
-                        DeviceSyncEvent(
-                            opId = UUID.randomUUID().toString(),
-                            author = config.deviceId,
-                            seq = ++seq,
-                            createdAt = now,
-                            filter = filter,
-                        ),
-                    )
-                }
-                if (filters.isNotEmpty()) requireStore().saveSettingHashes(settingHashes)
             }
+            if (filters.isNotEmpty()) requireStore().saveSettingHashes(settingHashes)
             _state.value = _state.value.copy(pending = requireStore().pendingCount())
         }
         syncNow()
     }
 
-    /** Optional settings sync is per device and off by default. */
-    suspend fun setSyncSettings(context: Context, enabled: Boolean) {
+    /** Device-specific settings sync is per device and off by default. */
+    suspend fun setSyncDeviceSettings(context: Context, enabled: Boolean) {
         init(context)
-        config = config.copy(syncSettings = enabled)
+        config = config.copy(syncDeviceSettings = enabled)
         requireStore().saveConfig(config)
-        _state.value = _state.value.copy(syncSettings = enabled)
-        if (!enabled) requireStore().saveSettingHashes(emptyMap())
+        _state.value = _state.value.copy(syncDeviceSettings = enabled)
+        requireStore().saveSettingHashes(emptyMap())
         recordLocalChanges()
     }
 
@@ -493,7 +492,7 @@ object DeviceSyncEngine {
                                 // Filters are LWW by key and use the same applied cursor as entries.
                                 val applied = requireStore().loadApplied().toMutableMap()
                                 if (filter.updatedAt > (applied[filter.key] ?: 0L)) {
-                                    if (config.syncSettings) DeviceSyncSettings.apply(filter)
+                                    DeviceSyncSettings.apply(filter, config.syncDeviceSettings)
                                     applied[filter.key] = filter.updatedAt
                                     requireStore().saveApplied(applied)
                                 }

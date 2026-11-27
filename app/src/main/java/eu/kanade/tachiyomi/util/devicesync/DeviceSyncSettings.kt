@@ -7,14 +7,14 @@ import uy.kohesive.injekt.api.get
 import java.security.MessageDigest
 
 /**
- * Optional sync for a deliberately small whitelist of library preferences. Everything else stays
- * local to each device. The toggle itself is never synced.
+ * Library view preferences are synced as part of normal sync. Device-specific preferences (decoder,
+ * viewer, internal player and advanced settings) are opt-in per device and off by default.
  */
 object DeviceSyncSettings {
 
     private const val PREFIX = "setting:"
 
-    /** Display/filter preferences that are useful to keep identical across devices. */
+    /** Library display/filter preferences, always synced like the rest of the library. */
     private val KEYS = setOf(
         "pref_display_mode_library",
         "library_sorting_mode",
@@ -36,18 +36,24 @@ object DeviceSyncSettings {
         "pref_filter_animelib_bookmarked_v2",
     )
 
+    /** True when the key is shared, requiring explicit consent for device-specific ones. */
+    fun canSync(key: String, includeDeviceSettings: Boolean): Boolean =
+        key in KEYS || (includeDeviceSettings && key in DeviceSyncDeviceSettings.KEYS)
+
     private val preferenceStore: PreferenceStore get() = Injekt.get()
 
     /** Returns only the changed settings and the new hash map. */
     fun collect(
         previous: Map<String, String>,
         now: Long,
+        includeDeviceSettings: Boolean,
     ): Pair<List<DeviceSyncFilter>, Map<String, String>> {
         val all = preferenceStore.getAll()
         val hashes = previous.toMutableMap()
         val filters = mutableListOf<DeviceSyncFilter>()
+        val keys = if (includeDeviceSettings) KEYS + DeviceSyncDeviceSettings.KEYS else KEYS
 
-        KEYS.forEach { key ->
+        keys.forEach { key ->
             val encoded = encode(all[key]) ?: return@forEach
             val fullKey = PREFIX + key
             val hash = fingerprint(encoded)
@@ -63,9 +69,9 @@ object DeviceSyncSettings {
         return filters to hashes
     }
 
-    fun apply(filter: DeviceSyncFilter) {
+    fun apply(filter: DeviceSyncFilter, includeDeviceSettings: Boolean) {
         val key = filter.key.removePrefix(PREFIX)
-        if (filter.deleted || key !in KEYS) return
+        if (filter.deleted || !canSync(key, includeDeviceSettings)) return
         val value = runCatching {
             deviceSyncJson.decodeFromString<DeviceSyncSettingValue>(filter.value)
         }.getOrNull() ?: return

@@ -719,7 +719,9 @@
     <string name="device_sync_paste_qr">Paste QR code</string>
     <string name="device_sync_camera_permission">Allow camera</string>
     <string name="device_sync_ack_info">Sync files are deleted only after every paired device confirms them.</string>
-    <string name="device_sync_settings_toggle">Also sync some library settings (optional, off by default)</string>
+    <string name="device_sync_settings_toggle">Also sync device settings (decoder, reader, player, advanced; off by default)</string>
+    <string name="device_sync_device_settings_title">Sync device settings?</string>
+    <string name="device_sync_device_settings_warning">Decoder, reader, internal player and advanced settings will be copied between paired devices. Their values depend on each device's codecs, screen and controls, so this is off by default. Library settings are always synced.</string>
     <string name="device_sync_scan">Scan QR</string>
     <string name="device_sync_scan_hint">Point at the QR code inside the frame; it is detected automatically.</string>
     <string name="device_sync_no_qr">No QR code detected yet.</string>

@@ -15,11 +15,17 @@ Los archivos descargados **no** se sincronizan.
 - Categorías (creación y borrado por nombre).
 - Borrados de la biblioteca (tombstones).
 
-**No se sincronizan** los archivos descargados, ni el resto de ajustes de la app. Hay una opción
-**Sincronizar también algunos ajustes de biblioteca** (desactivada por defecto) que comparte solo
-una lista reducida de preferencias de vista/filtros de biblioteca: modo de lista, orden, pestañas
-y badges de categorías, columnas y filtros de no leído/marcador. El propio interruptor es local a
-cada dispositivo.
+Los ajustes de vista/filtros de biblioteca se sincronizan **como una sincronización normal**, sin
+interruptor ni confirmación: modo de lista, orden, pestañas y badges de categorías, columnas y
+filtros de no leído/marcador.
+
+**No se sincronizan** los archivos descargados. El **decodificador**, el **reproductor interno**, el
+**visor/lector** y los **ajustes avanzados** quedan fuera por defecto. Hay una opción
+**Sincronizar también ajustes del dispositivo** (desactivada por defecto y con confirmación al
+activarla) que los incluye en la sincronización. Hay que activarla en cada dispositivo: si otro
+equipo envía estos ajustes y el receptor no los ha habilitado, se ignoran. Sus valores dependen de
+los códecs, WSA/emulador, pantalla y controles de cada equipo, por eso no se copian
+automáticamente. El propio interruptor es local a cada dispositivo.
 
 ## Emparejamiento (un solo enlace)
 
