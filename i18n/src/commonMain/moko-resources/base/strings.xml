@@ -720,6 +720,15 @@
     <string name="device_sync_camera_permission">Allow camera</string>
     <string name="device_sync_ack_info">Sync files are deleted only after every paired device confirms them.</string>
     <string name="device_sync_settings_toggle">Also sync some library settings (optional, off by default)</string>
+    <string name="device_sync_scan">Scan QR</string>
+    <string name="device_sync_scan_hint">Point at the QR code, then tap Scan.</string>
+    <string name="device_sync_invite">Pairing link</string>
+    <string name="device_sync_copy_invite">Copy link</string>
+    <string name="device_sync_paste_invite">Paste link or 8-digit code</string>
+    <string name="device_sync_join">Join</string>
+    <string name="device_sync_code_confirmed">Code confirmed. Enter the password shown on the other device.</string>
+    <string name="device_sync_relay_hint">Included in the link; the other device does not need to configure it.</string>
+    <string name="device_sync_bad_invite">Invalid link or code.</string>
 
       <!-- Advanced section -->
     <string name="label_network">Networking</string>

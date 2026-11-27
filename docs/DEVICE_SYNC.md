@@ -21,31 +21,32 @@ una lista reducida de preferencias de vista/filtros de biblioteca: modo de lista
 y badges de categorías, columnas y filtros de no leído/marcador. El propio interruptor es local a
 cada dispositivo.
 
-## Emparejamiento manual (misma red)
+## Emparejamiento (un solo enlace)
 
-1. En el dispositivo A, pulsa **Publicar este dispositivo**. Se genera un código de **8 dígitos**
-   y se anuncia en la LAN.
-2. Comunica el código al usuario del dispositivo B (están en la misma Wi‑Fi).
-3. En B, escribe el código de 8 dígitos y pulsa **Emparejar manualmente**; B confirma el código.
-4. Cuando A ve el dispositivo B en la lista, lo selecciona y pulsa **Confirmar dispositivos
-   seleccionados**. Solo entonces A muestra la contraseña aleatoria de **10 letras**.
-5. En B, escribe esa contraseña y confírmala. Quedan vinculados.
+1. En el dispositivo A, pulsa **Publicar este dispositivo**. Se generan el código de **8 dígitos**,
+   un endpoint y un enlace `extyomisync://pair#...` que también se muestra como código QR.
+2. En B, escanea ese QR (hay un botón **Escanear QR**) o pega el enlace en el único campo
+   **Pega el enlace o el código de 8 dígitos** y pulsa **Unirse**. También funciona un código suelto
+   de 8 dígitos si ambos dispositivos están en la misma LAN.
+3. B envía la confirmación directamente al endpoint (o al relay) que viene dentro del enlace, así
+   que A la recibe sin depender de broadcasts. A confirma automáticamente al primer dispositivo,
+   le muestra a B el mensaje **Código confirmado** y revela su contraseña aleatoria de **10 letras**.
+   Si se unen más dispositivos, A puede seleccionar cuáles confirmar antes de mostrar la contraseña.
+4. En B, escribe esa contraseña y pulsa el botón de contraseña. Quedan vinculados.
 
-## Emparejamiento por QR (redes distintas)
+## Relay (redes distintas)
 
-El dispositivo A muestra un QR con el código, su nombre/modelo y su endpoint. B puede escanearlo
-con la cámara o pegar el texto del QR. B ve los dispositivos ofrecidos, elige cuál confirmar y
-después introduce la contraseña que A revela.
-
-Si los dispositivos **no están en la misma LAN**, configura un servidor relay en el campo
-**Servidor relay**. Se incluye uno mínimo en `tools/device-sync-relay/server.py`:
+Si A y B no comparten red, escribe en A la URL de un relay accesible en el campo **Servidor relay**;
+el enlace que muestra A ya la incluye y B no tiene que configurar nada. Se incluye uno mínimo en
+`tools/device-sync-relay/server.py`:
 
 ```bash
 python3 tools/device-sync-relay/server.py --port 8789
 ```
 
 El campo debe valer `http://<host>:8789`. El relay solo ve ciphertext: no puede leer la
-biblioteca ni la contraseña.
+biblioteca ni la contraseña. Sin relay, el emparejamiento directo requiere que ambos dispositivos
+puedan alcanzarse por la LAN (o que el endpoint publicado sea accesible).
 
 ## Cifrado y borrado por ACK
 
