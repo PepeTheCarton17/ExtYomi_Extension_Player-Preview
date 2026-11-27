@@ -50,6 +50,8 @@ object DeviceSyncMerge {
         }
 
         return winner.copy(
+            // A deleted entry is a tombstone: it must not keep an older favorite state.
+            favorite = !winner.deleted && winner.favorite,
             dateAdded = listOf(current.dateAdded, incoming.dateAdded)
                 .firstOrNull { it > 0L } ?: 0L,
             lastUpdate = maxOf(current.lastUpdate, incoming.lastUpdate),
