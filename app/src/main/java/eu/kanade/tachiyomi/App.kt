@@ -45,6 +45,7 @@ import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.network.NetworkPreferences
 import eu.kanade.tachiyomi.ui.base.delegate.SecureActivityDelegate
 import eu.kanade.tachiyomi.ui.main.AppIconManager
+import eu.kanade.tachiyomi.util.devicesync.DeviceSyncEngine
 import eu.kanade.tachiyomi.util.standalone.sync.StandaloneAutoSync
 import eu.kanade.tachiyomi.util.system.DeviceUtil
 import eu.kanade.tachiyomi.util.system.GLUtil
@@ -251,7 +252,10 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
                 }
                 .distinctUntilChanged()
                 .drop(1)
-                .collect { StandaloneAutoSync.request(this@App) }
+                .collect {
+                    StandaloneAutoSync.request(this@App)
+                    DeviceSyncEngine.requestLocalChange(this@App)
+                }
         }
 
         scope.launchIO {
@@ -269,7 +273,10 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
                 }
                 .distinctUntilChanged()
                 .drop(1)
-                .collect { StandaloneAutoSync.request(this@App) }
+                .collect {
+                    StandaloneAutoSync.request(this@App)
+                    DeviceSyncEngine.requestLocalChange(this@App)
+                }
         }
 
         scope.launchIO {
@@ -287,7 +294,10 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
                 }
                 .distinctUntilChanged()
                 .drop(1)
-                .collect { StandaloneAutoSync.request(this@App) }
+                .collect {
+                    StandaloneAutoSync.request(this@App)
+                    DeviceSyncEngine.requestLocalChange(this@App)
+                }
         }
 
         scope.launchIO {
@@ -301,7 +311,10 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
                 }
                 .distinctUntilChanged()
                 .drop(1)
-                .collect { StandaloneAutoSync.request(this@App) }
+                .collect {
+                    StandaloneAutoSync.request(this@App)
+                    DeviceSyncEngine.requestLocalChange(this@App)
+                }
         }
 
         scope.launchIO {
@@ -315,7 +328,10 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
                 }
                 .distinctUntilChanged()
                 .drop(1)
-                .collect { StandaloneAutoSync.request(this@App) }
+                .collect {
+                    StandaloneAutoSync.request(this@App)
+                    DeviceSyncEngine.requestLocalChange(this@App)
+                }
         }
 
         scope.launchIO {
@@ -329,7 +345,10 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
                 }
                 .distinctUntilChanged()
                 .drop(1)
-                .collect { StandaloneAutoSync.request(this@App) }
+                .collect {
+                    StandaloneAutoSync.request(this@App)
+                    DeviceSyncEngine.requestLocalChange(this@App)
+                }
         }
     }
 
