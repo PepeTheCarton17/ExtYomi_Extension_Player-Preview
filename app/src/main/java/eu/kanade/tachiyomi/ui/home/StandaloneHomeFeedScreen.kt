@@ -69,10 +69,13 @@ import coil3.compose.AsyncImage
 import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.domain.ui.model.ContentFormat
 import eu.kanade.domain.ui.model.HomeFeedSort
+import eu.kanade.tachiyomi.ui.browse.anime.source.browse.BrowseAnimeSourceScreen
 import eu.kanade.tachiyomi.ui.browse.anime.source.globalsearch.GlobalAnimeSearchScreen
+import eu.kanade.tachiyomi.ui.browse.manga.source.browse.BrowseMangaSourceScreen
 import eu.kanade.tachiyomi.ui.browse.manga.source.globalsearch.GlobalMangaSearchScreen
 import eu.kanade.tachiyomi.ui.main.MainActivity
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
+import eu.kanade.tachiyomi.util.system.LocaleHelper
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import tachiyomi.i18n.MR
@@ -90,6 +93,10 @@ private enum class FeedFormat {
     POPULAR,
     RECENT,
 }
+
+/** The Home search icon follows the selected format instead of always opening manga search. */
+private fun FeedFormat.usesAnimeSearch(): Boolean =
+    this == FeedFormat.ANIME || this == FeedFormat.MOVIE || this == FeedFormat.SERIES
 
 private fun StandaloneFeedScreenModel.FeedItem.matches(format: FeedFormat): Boolean = when (format) {
     FeedFormat.ALL -> true
@@ -173,21 +180,24 @@ fun StandaloneHomeFeedScreen(
         }
     }
 
-    val animeScope = StandaloneScope.appliesTo(StandaloneScope.KIND_ANIME)
-    val mangaScope = StandaloneScope.appliesTo(StandaloneScope.KIND_MANGA) ||
-        StandaloneScope.appliesTo(StandaloneScope.KIND_NOVEL)
     val extensionFilter = StandaloneScope.extensionPkg.ifBlank { null }
     val feedListState = rememberLazyListState()
 
     val onFeedItemClick: (StandaloneFeedScreenModel.FeedItem) -> Unit = { item ->
-        if (item.isAnime) {
-            navigator.push(GlobalAnimeSearchScreen(item.title, extensionFilter))
-        } else {
-            navigator.push(
+        val sourceId = item.sourceId
+        when {
+            // A card generated from an extension must open that exact source/language variant.
+            sourceId != null &&
+                (item.sourceKind == StandaloneFeedScreenModel.KIND_ANIME || item.isAnime) ->
+                navigator.push(BrowseAnimeSourceScreen(sourceId, item.title))
+            sourceId != null ->
+                navigator.push(BrowseMangaSourceScreen(sourceId, item.title))
+            item.isAnime -> navigator.push(GlobalAnimeSearchScreen(item.title, extensionFilter))
+            else -> navigator.push(
                 GlobalMangaSearchScreen(
                     searchQuery = item.title,
                     extensionFilter = extensionFilter,
-                    novelOnly = StandaloneScope.appliesTo(StandaloneScope.KIND_NOVEL),
+                    novelOnly = item.sourceKind == StandaloneFeedScreenModel.KIND_NOVEL,
                 ),
             )
         }
@@ -224,7 +234,7 @@ fun StandaloneHomeFeedScreen(
             onTogglePopular = screenModel::togglePopular,
             onToggleAutoScrollHero = screenModel::toggleAutoScrollHero,
             onSetItemsPerSection = screenModel::setItemsPerSection,
-            onBlockedCategoriesChanged = screenModel::setBlockedCategories,
+            onEnabledCategoriesChanged = screenModel::setEnabledCategories,
             onCategoryOrderChanged = screenModel::setCategoryOrder,
             onSortChanged = screenModel::setSortMode,
             onSourcesChanged = screenModel::onSourcePreferencesChanged,
@@ -243,16 +253,10 @@ fun StandaloneHomeFeedScreen(
                 actions = {
                     IconButton(
                         onClick = {
-                            if (animeScope) {
+                            if (selectedFormat.usesAnimeSearch()) {
                                 navigator.push(GlobalAnimeSearchScreen("", extensionFilter))
                             } else {
-                                navigator.push(
-                                    GlobalMangaSearchScreen(
-                                        searchQuery = "",
-                                        extensionFilter = extensionFilter,
-                                        novelOnly = StandaloneScope.appliesTo(StandaloneScope.KIND_NOVEL),
-                                    ),
-                                )
+                                navigator.push(GlobalMangaSearchScreen(searchQuery = ""))
                             }
                         },
                     ) {
@@ -758,8 +762,18 @@ private fun feedRowTitle(row: StandaloneFeedScreenModel.FeedRow): String {
         StandaloneFeedScreenModel.KIND_MANGA -> stringResource(MR.strings.home_feed_kind_manga)
         else -> stringResource(MR.strings.home_feed_kind_novel)
     }
+    val sourceName = row.sourceName
     return when {
-        row.sourceName != null -> stringResource(MR.strings.home_feed_row_source, row.sourceName)
+        sourceName != null -> {
+            val lang = row.sourceLang
+                ?.takeIf { it.isNotBlank() }
+                ?.let { LocaleHelper.getSourceDisplayName(it, LocalContext.current) }
+            if (lang.isNullOrBlank()) {
+                stringResource(MR.strings.home_feed_row_source, sourceName)
+            } else {
+                stringResource(MR.strings.home_feed_row_source_lang, sourceName, lang)
+            }
+        }
         row.format != null -> stringResource(
             MR.strings.home_feed_row_format,
             when (row.format) {
