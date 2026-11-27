@@ -29,6 +29,7 @@ enum class DeviceSyncPhase {
 
 data class DeviceSyncUiState(
     val phase: DeviceSyncPhase = DeviceSyncPhase.IDLE,
+    val deviceId: String = "",
     val deviceName: String = "",
     val deviceModel: String = "",
     val code: String = "",
@@ -42,6 +43,7 @@ data class DeviceSyncUiState(
     val joinConfirmed: Boolean = false,
     val peers: List<DeviceSyncPeer> = emptyList(),
     val syncDeviceSettings: Boolean = false,
+    val natHint: Boolean = false,
     val pending: Int = 0,
     val lastSyncAt: Long = 0L,
     val error: String? = null,
@@ -52,7 +54,8 @@ object DeviceSyncEngine {
 
     private const val NO_PATH_ERROR =
         "No se pudo contactar con el otro dispositivo. Comprueba que ambos estén en la misma Wi-Fi " +
-            "(sin aislamiento de punto de acceso) o configura un servidor relay."
+            "(sin aislamiento de punto de acceso). Si uno es WSA/emulador, publica desde el teléfono " +
+            "y escanea su QR desde WSA; las respuestas se recogen automáticamente."
 
     private val transport = DeviceSyncTransport()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -63,11 +66,15 @@ object DeviceSyncEngine {
     private var store: DeviceSyncStore? = null
     private var key: SecretKeySpec? = null
     private var config = DeviceSyncConfig()
+    private var isHost = false
     private var joinTarget: DevicePairingMessage? = null
     private var joinEndpoints: List<String> = emptyList()
     private var pendingVerify: DeviceSyncMessage? = null
+    private var pollAckIds: Set<String> = emptySet()
     private var confirmedCandidates: Set<String> = emptySet()
     private var backgroundJobs: List<Job> = emptyList()
+    private var pollJob: Job? = null
+    private var syncJob: Job? = null
     private var seq = 0L
     private var collector: Job? = null
     private val scheduled = AtomicBoolean(false)
@@ -81,14 +88,22 @@ object DeviceSyncEngine {
             requireStore().saveConfig(config)
         }
         _state.value = _state.value.copy(
+            deviceId = id,
             deviceName = Build.MODEL,
             deviceModel = Build.MODEL,
             peers = config.peers,
             syncDeviceSettings = config.syncDeviceSettings,
+            natHint = DeviceSyncNat.isVirtualAndroid(Build.MANUFACTURER, Build.MODEL, Build.BRAND),
             relayUrl = config.relayUrl,
             pending = requireStore().pendingCount(),
             error = null,
         )
+        // After a restart we are neither host nor joiner, but ACKs and host replies may still be
+        // waiting in the other device's mailbox. Keep collecting and draining them automatically.
+        if (config.peers.isNotEmpty()) {
+            ensurePollLoop()
+            ensureSyncLoop()
+        }
     }
 
     suspend fun startHost(context: Context, relayUrl: String = "") {
@@ -101,15 +116,18 @@ object DeviceSyncEngine {
         )
         requireStore().saveConfig(config)
         key = DeviceSyncCrypto.deriveKey(config.code, config.password)
+        isHost = true
         transport.relayUrl = config.relayUrl
         transport.start()
         joinTarget = null
         confirmedCandidates = emptySet()
         _state.value = _state.value.copy(
-            phase = DeviceSyncPhase.HOST_WAITING,
+            // The secret is already on this device; waiting for an inbound CODE_CONFIRM
+            // to reveal it created a deadlock on NAT/WSA networks.
+            phase = DeviceSyncPhase.HOST_PASSWORD_READY,
             code = config.code,
             password = config.password,
-            passwordVisible = false,
+            passwordVisible = true,
             endpoint = transport.endpoint,
             endpoints = transport.endpoints,
             relayUrl = config.relayUrl,
@@ -144,6 +162,7 @@ object DeviceSyncEngine {
                 }
             },
         )
+        ensureSyncLoop()
     }
 
     suspend fun startJoin(context: Context, target: DevicePairingMessage) {
@@ -151,6 +170,7 @@ object DeviceSyncEngine {
             context,
             DevicePairingQr(
                 code = target.code,
+                deviceId = target.from,
                 name = target.deviceName,
                 model = target.deviceModel,
                 endpoint = target.endpoint,
@@ -168,6 +188,9 @@ object DeviceSyncEngine {
     suspend fun startJoinWithInvite(context: Context, invite: DevicePairingQr) {
         init(context)
         stop()
+        config = config.copy(code = invite.code)
+        requireStore().saveConfig(config)
+        isHost = false
         // Use only the relay carried by the invite: a stale local relay would send the
         // confirmation to a mailbox the host is not polling.
         transport.relayUrl = invite.relayUrl
@@ -178,7 +201,7 @@ object DeviceSyncEngine {
             .distinct()
         joinTarget = DevicePairingMessage(
             type = "OFFER",
-            from = "",
+            from = invite.deviceId,
             deviceName = invite.name,
             deviceModel = invite.model,
             endpoint = invite.endpoint,
@@ -227,14 +250,18 @@ object DeviceSyncEngine {
                 if (transport.relayUrl.isNotBlank()) pollRelay()
             }
         }
+        // CONFIRM / VERIFY_ACK / ACK can be queued by the host when it cannot open a
+        // connection back to us (WSA, NAT, firewall). Collect them over our own connection.
+        ensurePollLoop()
+        ensureSyncLoop()
     }
 
-    /** The first device reveals the password only after confirming at least one device. */
+    /** The password is local state; no inbound confirmation is allowed to hide it again. */
     fun confirmCandidates(ids: Set<String>) {
         confirmedCandidates = ids
         _state.value = _state.value.copy(
-            phase = if (ids.isEmpty()) DeviceSyncPhase.HOST_WAITING else DeviceSyncPhase.HOST_PASSWORD_READY,
-            passwordVisible = ids.isNotEmpty(),
+            phase = DeviceSyncPhase.HOST_PASSWORD_READY,
+            passwordVisible = true,
             confirmedCandidates = ids,
         )
         ids.forEach { id ->
@@ -272,10 +299,38 @@ object DeviceSyncEngine {
         )
         pendingVerify = message
         val delivered = sendEncrypted(target, message)
+        if (delivered) {
+            // Possession of the shared secret is proven by a VERIFY the host can decrypt.
+            // Do not wait for CONFIRM/VERIFY_ACK: those are best effort and may be queued
+            // on the host, to be collected by pollHost() over this same outgoing connection.
+            persistJoinerPeer(target)
+            scope.launch { recordLocalChanges() }
+        }
         _state.value = _state.value.copy(
-            phase = DeviceSyncPhase.JOIN_WAITING_ACK,
+            phase = if (delivered) DeviceSyncPhase.PAIRED else DeviceSyncPhase.JOIN_WAITING_ACK,
+            joinConfirmed = true,
             error = if (delivered) null else NO_PATH_ERROR,
         )
+    }
+
+    private suspend fun persistJoinerPeer(target: DevicePairingMessage) {
+        val hostId = target.from
+        if (hostId.isBlank()) return
+        val peers = requireStore().loadConfig().peers.toMutableList()
+        if (peers.none { it.deviceId == hostId }) {
+            peers += DeviceSyncPeer(
+                deviceId = hostId,
+                name = target.deviceName,
+                model = target.deviceModel,
+                endpoint = target.endpoint,
+                endpoints = target.endpoints,
+                code = config.code,
+                trustedAt = System.currentTimeMillis(),
+            )
+            config = config.copy(peers = peers)
+            requireStore().saveConfig(config)
+        }
+        _state.value = _state.value.copy(peers = peers)
     }
 
     suspend fun syncNow() = withContext(Dispatchers.IO) {
@@ -284,6 +339,7 @@ object DeviceSyncEngine {
             val peers = requireStore().loadConfig().peers
             if (peers.isEmpty()) return@withLock
             val events = requireStore().outboxEvents()
+            val delivered = mutableListOf<Boolean>()
             peers.forEach { peer ->
                 val message = DeviceSyncMessage(
                     type = if (events.isEmpty()) "HEARTBEAT" else "EVENTS",
@@ -294,13 +350,14 @@ object DeviceSyncEngine {
                     events = events,
                     sentAt = System.currentTimeMillis(),
                 )
-                sendEncrypted(peer.toPairingTarget(), message)
+                delivered += sendEncrypted(peer.toPairingTarget(), message)
             }
+            val ok = delivered.any { it }
             _state.value = _state.value.copy(
                 peers = peers,
                 pending = events.size,
-                lastSyncAt = System.currentTimeMillis(),
-                error = null,
+                lastSyncAt = if (ok) System.currentTimeMillis() else _state.value.lastSyncAt,
+                error = if (ok) null else NO_PATH_ERROR,
             )
         }
     }
@@ -410,10 +467,16 @@ object DeviceSyncEngine {
     fun stop() {
         backgroundJobs.forEach { it.cancel() }
         backgroundJobs = emptyList()
+        pollJob?.cancel()
+        pollJob = null
+        syncJob?.cancel()
+        syncJob = null
         collector?.cancel()
         collector = null
+        isHost = false
         joinEndpoints = emptyList()
         pendingVerify = null
+        pollAckIds = emptySet()
         transport.stop()
         if (_state.value.phase != DeviceSyncPhase.IDLE) {
             _state.value = _state.value.copy(phase = DeviceSyncPhase.PAIRED)
@@ -442,6 +505,10 @@ object DeviceSyncEngine {
                             message.code == joinTarget?.code
                         ) {
                             if (joinTarget?.endpoint.isNullOrBlank()) joinTarget = message
+                            // A bare 8-digit code has no host id either; learn it from the OFFER.
+                            if (joinTarget?.from.isNullOrBlank()) {
+                                joinTarget = joinTarget?.copy(from = message.from)
+                            }
                             // A bare 8-digit code has no endpoint; a broadcast OFFER supplies one,
                             // possibly with more addresses than the QR carried.
                             val merged = (joinEndpoints + message.endpoints + message.endpoint)
@@ -467,8 +534,7 @@ object DeviceSyncEngine {
                             val updated = current + message
                             // First requester is confirmed automatically so the password appears
                             // without an extra tap; further devices can still be selected in the UI.
-                            val auto = _state.value.phase == DeviceSyncPhase.HOST_WAITING &&
-                                _state.value.confirmedCandidates.isEmpty()
+                            val auto = _state.value.confirmedCandidates.isEmpty()
                             val confirmed = if (auto) setOf(message.from) else _state.value.confirmedCandidates
                             confirmedCandidates = confirmed
                             _state.value = _state.value.copy(
@@ -494,6 +560,7 @@ object DeviceSyncEngine {
                         if (merged.isNotEmpty()) {
                             joinEndpoints = merged
                             joinTarget = joinTarget?.copy(
+                                from = joinTarget?.from?.ifBlank { message.from }.orEmpty(),
                                 endpoint = message.endpoint.ifBlank { merged.first() },
                                 endpoints = merged,
                             )
@@ -556,6 +623,9 @@ object DeviceSyncEngine {
                     }
                     "VERIFY_ACK" -> {
                         pendingVerify = null
+                        if (joinTarget?.from.isNullOrBlank()) {
+                            joinTarget = joinTarget?.copy(from = message.from)
+                        }
                         val peers = requireStore().loadConfig().peers.toMutableList()
                         if (peers.none { it.deviceId == message.from }) {
                             peers += DeviceSyncPeer(
@@ -611,6 +681,54 @@ object DeviceSyncEngine {
         }
     }
 
+    /** One collector for queued host replies, regardless of who started the session. */
+    private fun ensurePollLoop() {
+        if (pollJob?.isActive == true) return
+        pollJob = scope.launch {
+            while (isActive) {
+                pollHost()
+                delay(3_000L)
+            }
+        }
+    }
+
+    /** Periodic drain so EVENTS and ACKs also flow after both devices are paired. */
+    private fun ensureSyncLoop() {
+        if (syncJob?.isActive == true) return
+        syncJob = scope.launch {
+            while (isActive) {
+                delay(5_000L)
+                if (_state.value.phase == DeviceSyncPhase.PAIRED) syncNow()
+            }
+        }
+    }
+
+    /** Collects replies the host could not push to us, over the connection we opened. */
+    private suspend fun pollHost() {
+        val target = joinTarget
+            ?: requireStore().loadConfig().peers.firstOrNull()?.toPairingTarget()
+            ?: return
+        val endpoints = endpointsOf(target)
+        if (endpoints.isEmpty()) return
+        val acked = mutableSetOf<String>()
+        for (endpoint in endpoints) {
+            val messages = transport.poll(endpoint, config.deviceId, pollAckIds.toList())
+                .getOrNull() ?: continue
+            messages.forEach { queued ->
+                // A message that needs the shared key cannot be processed before the password
+                // is entered. Leave it in the mailbox instead of acknowledging and losing it.
+                if (queued.path == "/sync" && key == null) return@forEach
+                runCatching { handleMessage(queued.path, queued.body) }
+                    .onSuccess { acked += queued.id }
+                    .onFailure { _state.value = _state.value.copy(error = it.message) }
+            }
+            // Only acknowledge what we could process. A message that arrives before the
+            // password is entered must stay queued until the key exists.
+            if (acked.isNotEmpty()) pollAckIds = acked
+            return
+        }
+    }
+
     private suspend fun pollRelay() {
         val joining = _state.value.phase == DeviceSyncPhase.JOIN_WAITING_PASSWORD ||
             _state.value.phase == DeviceSyncPhase.JOIN_WAITING_ACK
@@ -650,12 +768,21 @@ object DeviceSyncEngine {
             if (_state.value.error == NO_PATH_ERROR) _state.value = _state.value.copy(error = null)
             return
         }
-        // Last chance when a device only allows UDP on the local network. A bare 8-digit
-        // code has no address at all, so broadcasting is the expected path, not an error.
-        transport.broadcast(pairing)
-        if (relay.isNotBlank() || endpoints.isNotEmpty()) {
+        // The other device may be behind NAT/WSA: leave the reply in our mailbox so its
+        // next poll delivers it. A bare 8-digit code has no addressee to queue for.
+        if (isHost && target.from.isNotBlank()) {
+            transport.enqueueReply(
+                deviceId = target.from,
+                path = "/pairing",
+                body = body,
+                dedupeKey = "${pairing.type}:${pairing.code}:${pairing.to}",
+            )
+            if (_state.value.error == NO_PATH_ERROR) _state.value = _state.value.copy(error = null)
+        } else if (relay.isNotBlank() || endpoints.isNotEmpty()) {
             _state.value = _state.value.copy(error = NO_PATH_ERROR)
         }
+        // Last chance when a device only allows UDP on the local network.
+        transport.broadcast(pairing)
     }
 
     private suspend fun sendEncrypted(target: DevicePairingMessage, message: DeviceSyncMessage): Boolean {
@@ -677,7 +804,17 @@ object DeviceSyncEngine {
             if (attempts.lastOrNull()?.isSuccess == true) return@forEach
             attempts += transport.send(endpoint, "/sync", envelope)
         }
-        return attempts.any { it.isSuccess }
+        if (attempts.any { it.isSuccess }) return true
+        if (!isHost || target.from.isBlank()) return false
+        val dedupe = listOf(
+            message.type,
+            config.deviceId,
+            message.to,
+            (message.acks + message.events.map { it.opId }).joinToString(","),
+        ).joinToString(":")
+        // Only the envelope (iv + ciphertext) is stored; the key and plaintext never leave.
+        transport.enqueueReply(target.from, "/sync", envelope, dedupe)
+        return true
     }
 
     /** The QR used to carry a single address; a phone can have Wi-Fi, VPN and hotspot at once. */

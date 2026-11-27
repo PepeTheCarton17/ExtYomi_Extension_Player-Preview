@@ -10,6 +10,8 @@ import java.security.SecureRandom
 data class DevicePairingQr(
     val v: Int = 1,
     val code: String,
+    /** Id of the host, so the joiner can trust and address it without waiting for CONFIRM. */
+    val deviceId: String = "",
     val name: String = "",
     val model: String = "",
     val endpoint: String = "",
