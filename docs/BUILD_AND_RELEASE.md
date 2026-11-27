@@ -9,13 +9,18 @@ Hay **dos apps independientes**, con distinto `applicationId` y distinta firma:
 
 ## Versiones
 
-La versión se define en `app/build.gradle.kts` (`versionCode` y `versionName`). Para publicar una nueva:
+`app/build.gradle.kts` (`versionCode` y `versionName`) es la **única fuente de la versión**. El
+workflow de Preview lee `versionName` y deriva de él el tag (`preview-vX.Y.Z`) y el título
+(`ExtYomi Preview vX.Y.Z`), así la versión que muestra la app, el tag y el título no pueden divergir.
+Para publicar una nueva:
 
-1. Actualizar `versionCode` y `versionName`.
-2. Actualizar `TAG` y `TITLE` en `.github/workflows/preview.yml` y `.github/workflows/stable.yml`.
-3. Commit y push a `main` en ambos repos.
+1. Actualizar `versionCode` y `versionName` en `app/build.gradle.kts`.
+2. Commit y push a `main` en el repo de Preview.
 
-Preview se publica automáticamente en cada push a `main` de su repo. Estable se publica al ejecutar el workflow **ExtYomi Stable** manualmente (`workflow_dispatch`) o al pushear un tag `v*`.
+Preview compila en cada push a `main`, pero **solo publica si el tag derivado no existe todavía**:
+si el release ya está publicado, se omite la subida en vez de reemplazar los APKs descargados. Por
+eso todo merge que deba publicar cambios tiene que subir `versionName`. Estable se publica al
+ejecutar el workflow **ExtYomi Stable** manualmente (`workflow_dispatch`) o al pushear un tag `v*`.
 
 ## Firmas
 
