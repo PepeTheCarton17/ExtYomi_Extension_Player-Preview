@@ -856,6 +856,8 @@
     <string name="device_sync_paste_invite">Pega el enlace o el código de 8 dígitos</string>
     <string name="device_sync_join">Unirse</string>
     <string name="device_sync_code_confirmed">Código confirmado. Escribe la contraseña que muestra el otro dispositivo.</string>
+    <string name="device_sync_waiting_confirm">Esperando a que el primer dispositivo confirme. Si no aparece, pulsa «Mostrar contraseña» en el primer dispositivo y escríbela abajo.</string>
+    <string name="device_sync_show_password">Mostrar contraseña</string>
     <string name="device_sync_relay_hint">Se incluye en el enlace; el otro dispositivo no necesita configurarlo.</string>
     <string name="device_sync_bad_invite">Enlace o código no válido.</string>
     <string name="information_cloudflare_help">Toca aquí para solucionar problemas de acceso con Cloudflare</string>

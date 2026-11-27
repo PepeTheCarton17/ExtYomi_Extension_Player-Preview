@@ -80,6 +80,49 @@ class DeviceSyncFoundationTest {
     }
 
     @Test
+    fun `pairing messages keep the relay so the reply uses the same channel`() {
+        val confirm = DevicePairingMessage(
+            type = "CODE_CONFIRM",
+            from = "second-device",
+            code = "12345678",
+            relayUrl = "https://relay.example.com",
+            to = "first-device",
+        )
+
+        assertEquals(confirm, confirm.toJson().toDevicePairingMessage())
+    }
+
+    @Test
+    fun `verify needs only the shared code and password`() {
+        val code = "12345678"
+        val password = "ABCDEFGHJK"
+        // The joiner derives its key from the invite alone; the host from its own stored secret.
+        val joinerKey = DeviceSyncCrypto.deriveKey(code, password)
+        val hostKey = DeviceSyncCrypto.deriveKey(code, password)
+        val verify = DeviceSyncMessage(
+            type = "VERIFY",
+            from = "second-device",
+            deviceName = "Second",
+        ).toJson()
+        val (iv, ciphertext) = DeviceSyncCrypto.encrypt(verify, joinerKey)
+        val envelope = DeviceSyncEnvelope(
+            type = "VERIFY",
+            from = "second-device",
+            to = "first-device",
+            code = code,
+            iv = iv,
+            ciphertext = ciphertext,
+        ).toJson()
+
+        val decoded = envelope.toDeviceSyncEnvelope().let {
+            DeviceSyncCrypto.decrypt(it.iv, it.ciphertext, hostKey).toDeviceSyncMessage()
+        }
+        assertEquals("VERIFY", decoded.type)
+        assertEquals("second-device", decoded.from)
+        assertEquals("Second", decoded.deviceName)
+    }
+
+    @Test
     fun `progress is monotonic and a newer tombstone wins`() {
         val older = entry(updatedAt = 100L, seen = false, favorite = true)
         val newer = entry(updatedAt = 200L, seen = true, deleted = true)

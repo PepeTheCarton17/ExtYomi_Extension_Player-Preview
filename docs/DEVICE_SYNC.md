@@ -35,10 +35,18 @@ automáticamente. El propio interruptor es local a cada dispositivo.
    **Pega el enlace o el código de 8 dígitos** y pulsa **Unirse**. También funciona un código suelto
    de 8 dígitos si ambos dispositivos están en la misma LAN.
 3. B envía la confirmación directamente al endpoint (o al relay) que viene dentro del enlace, así
-   que A la recibe sin depender de broadcasts. A confirma automáticamente al primer dispositivo,
-   le muestra a B el mensaje **Código confirmado** y revela su contraseña aleatoria de **10 letras**.
-   Si se unen más dispositivos, A puede seleccionar cuáles confirmar antes de mostrar la contraseña.
-4. En B, escribe esa contraseña y pulsa el botón de contraseña. Quedan vinculados.
+   que A la recibe sin depender de broadcasts, y reintenta cada 3 s con fallback por UDP. A confirma
+   automáticamente al primer dispositivo, le muestra a B el mensaje **Código confirmado** y revela
+   su contraseña aleatoria de **10 letras**. Si se unen más dispositivos, A puede seleccionar cuáles
+   confirmar antes de mostrar la contraseña.
+4. **Si el mensaje de confirmación no llega** (redes distintas, endpoint inalcanzable, A sigue
+   «Esperando a que el otro dispositivo confirme el código»), pulsa **Mostrar contraseña** en A.
+   Es un botón manual porque el aviso de confirmación es «best effort» y puede perderse. B muestra
+   mientras tanto **Esperando a que el primer dispositivo confirme**.
+5. En B, escribe esa contraseña y pulsa el botón de contraseña. Quedan vinculados: para A basta con
+   que el mensaje cifrado se descifre con el código y la contraseña, así que no hace falta que haya
+   recibido la confirmación previa. Por eso A «detecta» el dispositivo en cuanto B envía la
+   contraseña correcta.
 
 ## Relay (redes distintas)
 
