@@ -52,9 +52,13 @@ import eu.kanade.tachiyomi.util.system.WebViewUtil
 import eu.kanade.tachiyomi.util.system.animatorDurationScale
 import eu.kanade.tachiyomi.util.system.cancelNotification
 import eu.kanade.tachiyomi.util.system.notify
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.runBlocking
@@ -70,9 +74,15 @@ import tachiyomi.core.common.preference.PreferenceStore
 import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.system.ImageUtil
 import tachiyomi.core.common.util.system.logcat
+import tachiyomi.domain.category.anime.interactor.GetAnimeCategories
 import tachiyomi.domain.category.anime.repository.AnimeCategoryRepository
+import tachiyomi.domain.category.manga.interactor.GetMangaCategories
 import tachiyomi.domain.category.manga.repository.MangaCategoryRepository
 import tachiyomi.domain.category.model.CategoryUpdate
+import tachiyomi.domain.category.novel.interactor.GetNovelCategories
+import tachiyomi.domain.entries.anime.interactor.GetLibraryAnime
+import tachiyomi.domain.entries.manga.interactor.GetLibraryManga
+import tachiyomi.domain.entries.manga.interactor.GetNovelLibraryManga
 import tachiyomi.domain.history.anime.repository.AnimeHistoryRepository
 import tachiyomi.domain.history.manga.repository.MangaHistoryRepository
 import tachiyomi.domain.library.service.LibraryPreferences
@@ -137,14 +147,14 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
 
         val scope = ProcessLifecycleOwner.get().lifecycleScope
 
-        // Two-way sync with generated standalones runs on its own while the app is alive.
-        // The 60s cadence is cheap because StandaloneAutoSync debounces rapid foreground events.
+        // Fallback only: real changes are pushed immediately by observeStandaloneChanges below.
         scope.launchIO {
             while (isActive) {
-                delay(60_000L)
+                delay(30_000L)
                 StandaloneAutoSync.runIfEnabled(this@App)
             }
         }
+        observeStandaloneChanges(scope)
 
         // Show notification to disable Incognito Mode when it's enabled
         basePreferences.incognitoMode().changes()
@@ -209,6 +219,118 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         }
 
         initializeMigrator()
+    }
+
+    /**
+     * Library and category changes are the events that matter for standalone sync. Watching the
+     * flows avoids waiting for the next foreground or fallback tick; each flow's first emission is
+     * the baseline and is dropped so opening the app does not trigger a sync by itself.
+     */
+    private fun observeStandaloneChanges(scope: CoroutineScope) {
+        fun animeRelevant() = !StandaloneScope.isActive ||
+            StandaloneScope.appliesTo(StandaloneScope.KIND_ANIME)
+
+        fun mangaRelevant(kind: String) = !StandaloneScope.isActive ||
+            StandaloneScope.appliesTo(kind)
+
+        fun inScope(source: Long) = StandaloneScope.sourceId < 0 ||
+            StandaloneScope.sourceId == source
+
+        scope.launchIO {
+            Injekt.get<GetLibraryAnime>().subscribe()
+                .map { items ->
+                    if (!animeRelevant()) return@map ""
+                    items.asSequence()
+                        .filter { inScope(it.anime.source) }
+                        .map {
+                            "${it.id}|${it.category}|${it.anime.favorite}|" +
+                                "${it.seenCount}|${it.bookmarkCount}|${it.lastSeen}"
+                        }
+                        .sorted()
+                        .joinToString(";")
+                }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { StandaloneAutoSync.request(this@App) }
+        }
+
+        scope.launchIO {
+            Injekt.get<GetLibraryManga>().subscribe()
+                .map { items ->
+                    if (!mangaRelevant(StandaloneScope.KIND_MANGA)) return@map ""
+                    items.asSequence()
+                        .filter { inScope(it.manga.source) }
+                        .map {
+                            "${it.id}|${it.category}|${it.manga.favorite}|" +
+                                "${it.readCount}|${it.bookmarkCount}|${it.lastRead}"
+                        }
+                        .sorted()
+                        .joinToString(";")
+                }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { StandaloneAutoSync.request(this@App) }
+        }
+
+        scope.launchIO {
+            Injekt.get<GetNovelLibraryManga>().subscribe()
+                .map { items ->
+                    if (!mangaRelevant(StandaloneScope.KIND_NOVEL)) return@map ""
+                    items.asSequence()
+                        .filter { inScope(it.manga.source) }
+                        .map {
+                            "${it.id}|${it.category}|${it.manga.favorite}|" +
+                                "${it.readCount}|${it.bookmarkCount}|${it.lastRead}"
+                        }
+                        .sorted()
+                        .joinToString(";")
+                }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { StandaloneAutoSync.request(this@App) }
+        }
+
+        scope.launchIO {
+            Injekt.get<GetAnimeCategories>().subscribe()
+                .map { categories ->
+                    if (!animeRelevant()) return@map ""
+                    categories.asSequence()
+                        .map { "${it.id}|${it.name}|${it.order}|${it.hidden}" }
+                        .sorted()
+                        .joinToString(";")
+                }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { StandaloneAutoSync.request(this@App) }
+        }
+
+        scope.launchIO {
+            Injekt.get<GetMangaCategories>().subscribe()
+                .map { categories ->
+                    if (!mangaRelevant(StandaloneScope.KIND_MANGA)) return@map ""
+                    categories.asSequence()
+                        .map { "${it.id}|${it.name}|${it.order}|${it.hidden}" }
+                        .sorted()
+                        .joinToString(";")
+                }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { StandaloneAutoSync.request(this@App) }
+        }
+
+        scope.launchIO {
+            Injekt.get<GetNovelCategories>().subscribe()
+                .map { categories ->
+                    if (!mangaRelevant(StandaloneScope.KIND_NOVEL)) return@map ""
+                    categories.asSequence()
+                        .map { "${it.id}|${it.name}|${it.order}|${it.hidden}" }
+                        .sorted()
+                        .joinToString(";")
+                }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { StandaloneAutoSync.request(this@App) }
+        }
     }
 
     private fun initializeMigrator() {
