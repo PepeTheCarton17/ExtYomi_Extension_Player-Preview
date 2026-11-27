@@ -19,8 +19,8 @@ android {
     defaultConfig {
         applicationId = "com.pepethecarton17.extyomi"
 
-        versionCode = 36
-        versionName = "0.1.36"
+        versionCode = 37
+        versionName = "0.1.37"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getCommitCount()}\"")
         buildConfigField("String", "COMMIT_SHA", "\"${getGitSha()}\"")
