@@ -313,7 +313,7 @@ object DeviceSyncEngine {
         )
     }
 
-    private fun persistJoinerPeer(target: DevicePairingMessage) {
+    private suspend fun persistJoinerPeer(target: DevicePairingMessage) {
         val hostId = target.from
         if (hostId.isBlank()) return
         val peers = requireStore().loadConfig().peers.toMutableList()

@@ -135,7 +135,7 @@ class DeviceSyncTransport {
     }
 
     /** Collect replies addressed to [deviceId]; only ciphertext travels back. */
-    suspend fun poll(
+    internal suspend fun poll(
         endpoint: String,
         deviceId: String,
         ackIds: List<String> = emptyList(),
