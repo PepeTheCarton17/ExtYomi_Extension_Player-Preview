@@ -148,9 +148,7 @@ class DeviceSyncTransport {
                 .build()
             client.newCall(request).execute().use { response ->
                 require(response.isSuccessful) { "Peer replied ${response.code}" }
-                deviceSyncJson.decodeFromString<DevicePollResponse>(
-                    response.body?.string().orEmpty(),
-                ).messages
+                deviceSyncJson.decodeFromString<DevicePollResponse>(response.readBodyLimited()).messages
             }
         }
     }
@@ -229,8 +227,7 @@ class DeviceSyncTransport {
             val request = Request.Builder().url(url).get().build()
             client.newCall(request).execute().use { response ->
                 require(response.isSuccessful) { "Relay replied ${response.code}" }
-                val text = response.body?.string().orEmpty()
-                deviceSyncJson.decodeFromString<List<String>>(text)
+                deviceSyncJson.decodeFromString<List<String>>(response.readBodyLimited())
             }
         }
     }
@@ -249,6 +246,11 @@ class DeviceSyncTransport {
                         if (line.startsWith("Content-Length:", ignoreCase = true)) {
                             length = line.substringAfter(':').trim().toIntOrNull() ?: 0
                         }
+                    }
+                    // Reject implausible bodies before allocating a char array for them.
+                    if (length <= 0 || length > MAX_BODY_CHARS) {
+                        writeResponse(clientSocket, "error")
+                        return@use
                     }
                     val body = CharArray(length).let { chars ->
                         var read = 0
@@ -292,6 +294,14 @@ class DeviceSyncTransport {
         }
     }
 
+    private fun okhttp3.Response.readBodyLimited(): String {
+        val responseBody = body ?: return ""
+        if (responseBody.contentLength() > MAX_BODY_CHARS) {
+            error("Respuesta de sincronización demasiado grande")
+        }
+        return responseBody.string()
+    }
+
     private fun writeResponse(socket: Socket, body: String) {
         val bytes = body.toByteArray(Charsets.UTF_8)
         val header = (
@@ -322,6 +332,7 @@ class DeviceSyncTransport {
         const val REPLY_TTL_MS = 5 * 60_000L
         const val MAX_REPLIES_PER_DEVICE = 32
         const val MAX_REPLIES_PER_POLL = 16
+        const val MAX_BODY_CHARS = 800_000
         val JSON = "application/json".toMediaType()
     }
 }

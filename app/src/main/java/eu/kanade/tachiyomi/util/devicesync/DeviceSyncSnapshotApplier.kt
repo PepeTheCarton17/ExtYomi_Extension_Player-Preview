@@ -111,6 +111,7 @@ class DeviceSyncSnapshotApplier(
                         fillermark = chapter.fillermark,
                         scanlator = chapter.scanlator.ifBlank { null },
                         lastSecondSeen = chapter.position,
+                        dateFetch = chapter.dateFetch,
                         dateUpload = chapter.dateUpload,
                     )
                 },
@@ -128,6 +129,7 @@ class DeviceSyncSnapshotApplier(
                     bookmark = episode.bookmark || incoming.bookmark,
                     fillermark = episode.fillermark || incoming.fillermark,
                     lastSecondSeen = maxOf(episode.lastSecondSeen, incoming.position),
+                    dateFetch = incoming.dateFetch.takeIf { it > episode.dateFetch },
                     scanlator = incoming.scanlator.ifBlank { null },
                 )
             },
@@ -227,6 +229,7 @@ class DeviceSyncSnapshotApplier(
                         read = chapter.seen,
                         bookmark = chapter.bookmark,
                         lastPageRead = chapter.position,
+                        dateFetch = chapter.dateFetch,
                         dateUpload = chapter.dateUpload,
                         scanlator = chapter.scanlator.ifBlank { null },
                     )
@@ -244,6 +247,7 @@ class DeviceSyncSnapshotApplier(
                     read = chapter.read || incoming.seen,
                     bookmark = chapter.bookmark || incoming.bookmark,
                     lastPageRead = maxOf(chapter.lastPageRead, incoming.position),
+                    dateFetch = incoming.dateFetch.takeIf { it > chapter.dateFetch },
                     scanlator = incoming.scanlator.ifBlank { null },
                 )
             },

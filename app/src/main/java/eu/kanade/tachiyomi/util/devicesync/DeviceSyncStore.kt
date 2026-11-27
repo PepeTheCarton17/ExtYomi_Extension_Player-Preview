@@ -5,10 +5,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
+
+/** An event received from a peer, kept until it has been applied and acknowledged. */
+@Serializable
+internal data class DeviceIncomingEvent(
+    val from: String,
+    val event: DeviceSyncEvent,
+    val receivedAt: Long = 0L,
+)
 
 /**
  * App-private transport files. A delta event is deleted only when every paired device has sent an
@@ -18,9 +27,11 @@ class DeviceSyncStore(context: Context) {
 
     private val root = File(context.applicationContext.filesDir, "device-sync")
     private val outbox = File(root, "outbox")
+    private val inbox = File(root, "inbox")
     private val configFile = File(root, "config.json")
     private val hashesFile = File(root, "hashes.json")
     private val acksFile = File(root, "acks.json")
+    private val pendingAcksFile = File(root, "pending-acks.json")
     private val categoriesFile = File(root, "categories.json")
     private val settingHashesFile = File(root, "setting-hashes.json")
     private val appliedFile = File(root, "applied.json")
@@ -28,6 +39,7 @@ class DeviceSyncStore(context: Context) {
 
     init {
         outbox.mkdirs()
+        inbox.mkdirs()
     }
 
     suspend fun loadConfig(): DeviceSyncConfig = withLock {
@@ -87,15 +99,90 @@ class DeviceSyncStore(context: Context) {
         write(appliedFile, deviceSyncJson.encodeToString(applied))
     }
 
-    suspend fun outboxEvents(): List<DeviceSyncEvent> = withLock {
-        outbox.listFiles { file -> file.extension == "json" }
+    /**
+     * Reads only one bounded batch, ordered by the file timestamp so a cursor stays stable even
+     * though ACKs delete files while a sync is in progress. `seq` is process-local and cannot be
+     * used as a persistent cursor after a restart.
+     */
+    suspend fun outboxBatch(
+        afterOpId: String?,
+        maxEvents: Int,
+        maxChars: Int,
+    ): List<DeviceSyncEvent> = withLock {
+        val ordered = outbox.listFiles { file -> file.extension == "json" }
             .orEmpty()
-            .mapNotNull { runCatching { read(it)?.toDeviceSyncEvent() }.getOrNull() }
-            .sortedBy { it.seq }
+            .sortedWith(compareBy<File> { it.lastModified() }.thenBy { it.name })
+        val start = if (afterOpId.isNullOrBlank()) {
+            0
+        } else {
+            val index = ordered.indexOfFirst { it.nameWithoutExtension == afterOpId }
+            if (index < 0) 0 else index + 1
+        }
+        val batch = mutableListOf<DeviceSyncEvent>()
+        var chars = 0
+        for (file in ordered.subList(start, ordered.size)) {
+            val event = runCatching { read(file)?.toDeviceSyncEvent() }.getOrNull() ?: continue
+            val size = runCatching { event.toJson().length }.getOrDefault(0)
+            if (batch.isNotEmpty() && (batch.size >= maxEvents || chars + size > maxChars)) break
+            batch += event
+            chars += size
+        }
+        batch
     }
 
     suspend fun enqueue(event: DeviceSyncEvent) = withLock {
         write(File(outbox, "${event.opId}.json"), event.toJson())
+    }
+
+    /** Remote events are persisted before they are applied, so a crash cannot lose changes. */
+    suspend fun enqueueIncoming(from: String, events: List<DeviceSyncEvent>) = withLock {
+        if (from.isBlank()) return@withLock
+        events.forEach { event ->
+            val wrapper = DeviceIncomingEvent(from, event, System.currentTimeMillis())
+            write(File(inbox, "${event.opId}.json"), deviceSyncJson.encodeToString(wrapper))
+        }
+    }
+
+    internal suspend fun inboxBatch(maxEvents: Int): List<DeviceIncomingEvent> = withLock {
+        inbox.listFiles { file -> file.extension == "json" }
+            .orEmpty()
+            .sortedBy { it.lastModified() }
+            .take(maxEvents)
+            .mapNotNull {
+                runCatching {
+                    read(it)?.let { json -> deviceSyncJson.decodeFromString<DeviceIncomingEvent>(json) }
+                }.getOrNull()
+            }
+    }
+
+    suspend fun dropIncoming(opIds: List<String>) = withLock {
+        opIds.forEach { File(inbox, "$it.json").delete() }
+    }
+
+    suspend fun inboxCount(): Int = withLock {
+        inbox.listFiles { file -> file.extension == "json" }.orEmpty().size
+    }
+
+    /** ACKs that could not be delivered are retried on the next sync tick. */
+    suspend fun addPendingAcks(peerId: String, opIds: List<String>) = withLock {
+        if (peerId.isBlank() || opIds.isEmpty()) return@withLock
+        val acks = readPendingAcks()
+        val bucket = acks.getOrPut(peerId) { mutableListOf() }
+        opIds.forEach { if (it !in bucket) bucket += it }
+        writePendingAcks(acks)
+    }
+
+    suspend fun pendingAcks(peerId: String, limit: Int): List<String> = withLock {
+        readPendingAcks()[peerId].orEmpty().take(limit)
+    }
+
+    suspend fun removePendingAcks(peerId: String, opIds: List<String>) = withLock {
+        if (opIds.isEmpty()) return@withLock
+        val acks = readPendingAcks()
+        val bucket = acks[peerId] ?: return@withLock
+        bucket.removeAll(opIds.toSet())
+        if (bucket.isEmpty()) acks.remove(peerId) else acks[peerId] = bucket
+        writePendingAcks(acks)
     }
 
     suspend fun acknowledge(peerId: String, opIds: List<String>) = withLock {
@@ -126,9 +213,20 @@ class DeviceSyncStore(context: Context) {
         write(acksFile, deviceSyncJson.encodeToString(acks))
     }
 
-    suspend fun pendingCount(): Int = withLock {
+    /** Local changes that are still waiting for an ACK from every paired device. */
+    suspend fun outgoingPending(): Int = withLock {
         outbox.listFiles { file -> file.extension == "json" }.orEmpty().size
     }
+
+    private fun readPendingAcks(): MutableMap<String, MutableList<String>> {
+        val decoded = runCatching {
+            deviceSyncJson.decodeFromString<Map<String, List<String>>>(read(pendingAcksFile).orEmpty())
+        }.getOrDefault(emptyMap())
+        return decoded.mapValues { it.value.toMutableList() }.toMutableMap()
+    }
+
+    private fun writePendingAcks(acks: Map<String, List<String>>) =
+        write(pendingAcksFile, deviceSyncJson.encodeToString(acks))
 
     suspend fun forgetPeer(peerId: String) = withLock {
         val config = read(configFile)?.toDeviceSyncConfig() ?: DeviceSyncConfig()
@@ -143,6 +241,9 @@ class DeviceSyncStore(context: Context) {
         }.getOrDefault(mutableMapOf())
         acks.remove(peerId)
         write(acksFile, deviceSyncJson.encodeToString(acks))
+        val pending = readPendingAcks()
+        pending.remove(peerId)
+        writePendingAcks(pending)
     }
 
     suspend fun fingerprint(entry: DeviceSyncEntry): String = withContext(Dispatchers.Default) {

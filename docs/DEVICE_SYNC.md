@@ -10,7 +10,9 @@ Los archivos descargados **no** se sincronizan.
 - Estado de la obra (`status`) y última actualización conocida (`lastUpdate`), para que el estado
   de "actualizado/finalizado" coincida en ambos dispositivos.
 - Capítulos/episodios: vistos o leídos, marcadores, grupos de scanlación, marca de relleno,
-  posición, fecha de visionado/lectura, fecha de subida y número de veces visto/leído.
+  posición, fecha de visionado/lectura, fecha de descubrimiento (`dateFetch`), fecha de subida y
+  número de veces visto/leído. La fecha de descubrimiento es la que usa la pestaña
+  **Actualizaciones** para decidir qué capítulos aparecen.
 - Historial (fecha en que se vio o leyó cada capítulo/episodio).
 - Categorías (creación y borrado por nombre).
 - Borrados de la biblioteca (tombstones).
@@ -33,7 +35,9 @@ automáticamente. El propio interruptor es local a cada dispositivo.
    un endpoint y un enlace `extyomisync://pair#...` que también se muestra como código QR.
 2. En B, escanea ese QR (hay un botón **Escanear QR**) o pega el enlace en el único campo
    **Pega el enlace o el código de 8 dígitos** y pulsa **Unirse**. También funciona un código suelto
-   de 8 dígitos si ambos dispositivos están en la misma LAN.
+   de 8 dígitos si ambos dispositivos están en la misma LAN. Al escanear se rellenan
+   automáticamente el servidor relay y el campo del enlace; la contraseña **no** viaja en el QR y
+   hay que copiarla del otro dispositivo.
 3. El enlace/QR incluye **todas** las direcciones LAN de A (Wi-Fi, hotspot, VPN…) y el id de A, no
    solo una dirección. B envía el `CODE_CONFIRM` al relay si hay uno y, si no, lo intenta contra
    cada dirección hasta que una responde; solo si todas fallan usa el broadcast UDP como última
@@ -84,10 +88,22 @@ biblioteca ni la contraseña.
 - La clave se deriva con PBKDF2‑HMAC‑SHA256 del código de 8 dígitos y la contraseña de 10 letras
   o números del alfabeto `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`.
   Cada mensaje se cifra con AES‑256‑GCM y un IV aleatorio. La contraseña **nunca** viaja por la red.
-- Cada cambio se guarda como un evento pequeño en `device-sync/outbox/`.
-- El receptor aplica el evento y devuelve un ACK con el `opId`.
+- Cada cambio se guarda como un evento pequeño en `device-sync/outbox/` y se envía en lotes de como
+  máximo 24 eventos / 256 KB de JSON. Un solo evento con miles de capítulos hizo que
+  `Json.encodeToString` intentara reservar ~129 MB de una sola vez y tumbara la app; ahora cada
+  sobre cifrado queda por debajo de 1 MB. El cursor de envío es el `opId` del último evento, así
+  que los ACKs pueden borrar archivos mientras se envían los lotes siguientes sin saltarse ninguno.
+- El receptor guarda cada evento en `device-sync/inbox/` **antes** de aplicarlo y confirma solo los
+  que ha aplicado. Los ACKs se agrupan por dispositivo para no desbordar el buzón. Los ACKs que no
+  se pueden entregar se guardan y se reintentan en el siguiente ciclo.
 - El emisor **borra el archivo del evento solo cuando todos los dispositivos vinculados han
   confirmado**. Si un dispositivo está apagado, su evento permanece en cola y se reenvía al volver.
+- La pantalla muestra **Cambios por enviar** (eventos locales sin confirmación de todos) y
+  **Cambios por recibir** (eventos remotos guardados en la bandeja y aún no aplicados). No son el
+  mismo contador ni tienen por qué coincidir: cada dispositivo mantiene su propia cola.
+- Tras reiniciar se deriva la clave de la contraseña guardada localmente y se reinicia el
+  transporte, de modo que la sincronización no queda congelada. La contraseña sigue sin viajar por
+  la red ni aparecer en el QR.
 - Solo queda un cursor de ACK por dispositivo; no se envían instantáneas completas salvo el primer
   emparejamiento y la recuperación.
 

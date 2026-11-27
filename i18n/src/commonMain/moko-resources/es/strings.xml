@@ -840,7 +840,8 @@
     <string name="device_sync_peers">Dispositivos vinculados</string>
     <string name="device_sync_sync_now">Sincronizar ahora</string>
     <string name="device_sync_forget">Olvidar</string>
-    <string name="device_sync_pending">Cambios pendientes: %1$d</string>
+    <string name="device_sync_outgoing">Cambios por enviar: %1$d</string>
+    <string name="device_sync_incoming">Cambios por recibir: %1$d</string>
     <string name="device_sync_relay">Servidor relay (opcional, para redes distintas)</string>
     <string name="device_sync_paste_qr">Pegar código QR</string>
     <string name="device_sync_camera_permission">Permitir cámara</string>
@@ -860,6 +861,7 @@
     <string name="device_sync_show_password">Mostrar contraseña</string>
     <string name="device_sync_relay_hint">Se incluye en el enlace; el otro dispositivo no necesita configurarlo.</string>
     <string name="device_sync_bad_invite">Enlace o código no válido.</string>
+    <string name="device_sync_password_hint">La contraseña no está en el QR ni en el enlace: cópiala del otro dispositivo.</string>
     <string name="device_sync_wsa_host_hint">Este dispositivo está detrás de NAT (WSA/emulador), así que el otro no puede conectarse aquí. Publica desde el teléfono y escanea su QR desde aquí. Las respuestas se recogen automáticamente.</string>
     <string name="device_sync_wsa_join_hint">Este dispositivo está detrás de NAT (WSA/emulador). Mantén esta pantalla abierta: las confirmaciones y las respuestas de sincronización se recogen automáticamente por esta conexión.</string>
     <string name="information_cloudflare_help">Toca aquí para solucionar problemas de acceso con Cloudflare</string>

@@ -76,6 +76,7 @@ object DeviceSyncMerge {
         scanlator = current.scanlator.ifBlank { incoming.scanlator },
         position = maxOf(current.position, incoming.position),
         readAt = maxOf(current.readAt, incoming.readAt),
+        dateFetch = maxOf(current.dateFetch, incoming.dateFetch),
         dateUpload = maxOf(current.dateUpload, incoming.dateUpload),
         updatedAt = maxOf(current.updatedAt, incoming.updatedAt),
     )

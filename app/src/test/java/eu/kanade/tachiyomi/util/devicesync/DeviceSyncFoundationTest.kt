@@ -306,6 +306,52 @@ class DeviceSyncFoundationTest {
         }
     }
 
+    @Test
+    fun `batching keeps every event and respects both limits`() {
+        val events = (0 until 40).map { index ->
+            DeviceSyncEvent(
+                opId = "op-$index",
+                author = "phone",
+                seq = index.toLong(),
+                entry = entry(updatedAt = index.toLong()).copy(
+                    chapters = (0 until 40).map { n ->
+                        DeviceSyncChapter(url = "/chapter/$n", name = "Chapter $n")
+                    },
+                ),
+            )
+        }
+
+        val batches = events.batched(maxEvents = 8, maxChars = 20_000)
+        assertTrue(batches.size > 1)
+        assertEquals(events, batches.flatten())
+        assertTrue(batches.all { it.size <= 8 })
+        assertTrue(batches.all { batch -> batch.sumOf { it.toJson().length } <= 20_000 })
+    }
+
+    @Test
+    fun `dateFetch survives serialization and merges monotonically`() {
+        val original = entry(updatedAt = 1L).copy(
+            chapters = listOf(
+                DeviceSyncChapter(url = "/chapter/1", dateFetch = 100L, dateUpload = 90L),
+            ),
+        )
+        val event = DeviceSyncEvent(opId = "op-1", author = "phone", entry = original)
+        assertEquals(event, event.toJson().toDeviceSyncEvent())
+        assertTrue(event.toJson().contains("\"dateFetch\":100"))
+
+        val newer = original.copy(
+            updatedAt = 2L,
+            chapters = listOf(original.chapters.single().copy(dateFetch = 200L)),
+        )
+        assertEquals(200L, DeviceSyncMerge.mergeEntry(original, newer).chapters.single().dateFetch)
+        // An older event arriving late (relay redelivery) must not move the date backwards.
+        assertEquals(
+            200L,
+            DeviceSyncMerge.mergeEntry(DeviceSyncMerge.mergeEntry(original, newer), original)
+                .chapters.single().dateFetch,
+        )
+    }
+
     private fun entry(
         updatedAt: Long,
         seen: Boolean = false,
