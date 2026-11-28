@@ -80,6 +80,50 @@ class StandaloneSyncMergeTest {
     }
 
     @Test
+    fun `owners from uninstalled standalones are dropped`() {
+        val liveKey = SyncOwnerIndex.key(StandaloneScope.KIND_ANIME, SOURCE_ID, "/live")
+        val staleKey = SyncOwnerIndex.key(StandaloneScope.KIND_ANIME, SOURCE_ID, "/stale")
+        val owners = SyncOwnerIndex(
+            mapOf(liveKey to "app-a", staleKey to "old-app"),
+        )
+
+        assertEquals(
+            mapOf(liveKey to "app-a"),
+            owners.droppingStaleOwners(listOf("app-a", "app-b")).owners,
+        )
+    }
+
+    @Test
+    fun `a stale owner cannot erase the reinstalled standalone's category`() {
+        val key = SyncOwnerIndex.key(StandaloneScope.KIND_ANIME, SOURCE_ID, "/a")
+        val stored = SyncEntry(
+            url = "/a",
+            title = "A",
+            favorite = true,
+            updatedAt = 100L,
+            categories = listOf("Vieja"),
+        )
+        val changed = stored.copy(updatedAt = 200L, categories = listOf("Nueva"))
+        val current = payload("new-instance", revision = 4L, entries = listOf(stored))
+        val incoming = payload("new-instance", revision = 5L, entries = listOf(changed))
+        val stale = SyncOwnerIndex(mapOf(key to "old-instance"))
+
+        // Old behaviour: the change was discarded and the host later emitted a tombstone.
+        val withoutFix = StandaloneSyncMerge.merge(current, incoming, stale)
+        assertTrue(withoutFix.payload.entries.isEmpty())
+
+        val withFix = StandaloneSyncMerge.merge(
+            current,
+            incoming,
+            stale.droppingStaleOwners(listOf("new-instance")),
+        )
+        val entry = withFix.payload.entries.single()
+        assertEquals("Nueva", entry.categories.single())
+        assertFalse(entry.isTombstone)
+        assertEquals("new-instance", withFix.owners[key])
+    }
+
+    @Test
     fun `a category disappears with its last entry`() {
         val categorized = SyncEntry(
             url = "/a",

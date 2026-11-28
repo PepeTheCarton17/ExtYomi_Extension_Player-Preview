@@ -29,6 +29,8 @@ import java.util.Date
 class StandaloneSnapshotApplier(
     private val sourceId: Long = StandaloneScope.sourceId,
     private val kind: String = StandaloneScope.kind,
+    /** Last snapshot we applied. Only changed entries are written, so a one-entry edit is fast. */
+    private val previous: StandaloneSyncPayload? = null,
     private val animeRepository: AnimeRepository = Injekt.get(),
     private val mangaRepository: MangaRepository = Injekt.get(),
     private val episodeRepository: EpisodeRepository = Injekt.get(),
@@ -44,10 +46,17 @@ class StandaloneSnapshotApplier(
         require(payload.sourceId == sourceId && payload.kind == kind) {
             "Refusing a snapshot from another scope"
         }
+        val known = previous?.entries?.associateBy { it.url }.orEmpty()
+        val changed = payload.copy(
+            entries = payload.entries.filter { entry ->
+                val before = known[entry.url]
+                before == null || !entry.sameContentAs(before)
+            },
+        )
         if (kind == StandaloneScope.KIND_ANIME) {
-            applyAnime(payload)
+            applyAnime(changed)
         } else {
-            applyManga(payload)
+            applyManga(changed)
         }
     }
 

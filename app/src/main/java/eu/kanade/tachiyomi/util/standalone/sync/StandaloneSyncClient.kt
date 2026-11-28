@@ -52,6 +52,7 @@ object StandaloneSyncClient {
                 }
 
             val store = StandaloneSyncStore(context)
+            val previous = store.load(instanceId)
             val snapshotFile = File(context.cacheDir, "standalone-sync-in.json")
             val snapshotUri = FileProvider.getUriForFile(
                 context,
@@ -59,7 +60,7 @@ object StandaloneSyncClient {
                 snapshotFile.apply {
                     writeText(
                         StandaloneSnapshotBuilder(
-                            previous = store.load(instanceId),
+                            previous = previous,
                         ).build().toJson(),
                     )
                 },
@@ -95,7 +96,7 @@ object StandaloneSyncClient {
             check(merged.sourceId == StandaloneScope.sourceId) { "Wrong source" }
             check(merged.kind == StandaloneScope.kind) { "Wrong content kind" }
 
-            StandaloneSnapshotApplier().apply(merged)
+            StandaloneSnapshotApplier(previous = previous).apply(merged)
             store.save(merged)
             snapshotFile.delete()
             "OK"
