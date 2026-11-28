@@ -821,6 +821,8 @@
     <string name="action_sync_standalones">Sincronizar con standalones</string>
     <string name="action_sync_with_extyomi">Sincronizar con ExtYomi</string>
     <string name="standalone_sync_success">Sincronización completada</string>
+    <string name="standalone_sync_working">Sincronizando… mantén esta pantalla abierta</string>
+    <string name="standalone_sync_success_detail">Sincronización completada: %1$s</string>
     <string name="standalone_sync_failed">No se pudo sincronizar</string>
     <string name="standalone_sync_error_detail">No se pudo sincronizar: %1$s</string>
     <string name="pref_standalone_auto_sync">Sincronización automática con standalone</string>

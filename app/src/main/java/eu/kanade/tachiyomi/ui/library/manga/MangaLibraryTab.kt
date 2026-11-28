@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
@@ -33,7 +34,6 @@ import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.TabOptions
-import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.domain.ui.model.NavTab
 import eu.kanade.presentation.category.components.ChangeCategoryDialog
 import eu.kanade.presentation.components.AppBar
@@ -57,8 +57,7 @@ import eu.kanade.tachiyomi.ui.entries.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.home.HomeScreen
 import eu.kanade.tachiyomi.ui.main.MainActivity
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
-import eu.kanade.tachiyomi.util.standalone.sync.HostStandaloneSyncManager
-import eu.kanade.tachiyomi.util.standalone.sync.StandaloneSyncClient
+import eu.kanade.tachiyomi.util.standalone.sync.StandaloneAutoSync
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.channels.Channel
@@ -137,21 +136,36 @@ data object MangaLibraryTab : Tab {
 
         val onClickSync: () -> Unit = {
             scope.launchIO {
-                val result = if (StandaloneScope.isActive) {
-                    StandaloneSyncClient.syncNow(context.applicationContext)
-                } else {
-                    HostStandaloneSyncManager.syncAll(context.applicationContext)
+                // A big library can take minutes to merge, so acknowledge the tap immediately.
+                scope.launchIO {
+                    snackbarHostState.showSnackbar(
+                        message = context.stringResource(MR.strings.standalone_sync_working),
+                        duration = SnackbarDuration.Indefinite,
+                    )
                 }
-                val text = if (result.isSuccess) {
-                    context.stringResource(MR.strings.standalone_sync_success)
-                } else {
-                    val detail = result.exceptionOrNull()?.message?.takeIf { it.isNotBlank() }
-                    if (detail == null) {
-                        context.stringResource(MR.strings.standalone_sync_failed)
-                    } else {
-                        context.stringResource(MR.strings.standalone_sync_error_detail, detail)
-                    }
-                }
+                val result = runCatching { StandaloneAutoSync.runNow(context.applicationContext) }
+                    .getOrElse { Result.failure(it) }
+                snackbarHostState.currentSnackbarData?.dismiss()
+                val text = result.fold(
+                    onSuccess = { detail ->
+                        if (detail.isNotBlank()) {
+                            context.stringResource(
+                                MR.strings.standalone_sync_success_detail,
+                                detail,
+                            )
+                        } else {
+                            context.stringResource(MR.strings.standalone_sync_success)
+                        }
+                    },
+                    onFailure = { error ->
+                        val detail = error.message?.takeIf { it.isNotBlank() }
+                        if (detail == null) {
+                            context.stringResource(MR.strings.standalone_sync_failed)
+                        } else {
+                            context.stringResource(MR.strings.standalone_sync_error_detail, detail)
+                        }
+                    },
+                )
                 snackbarHostState.showSnackbar(text)
             }
         }

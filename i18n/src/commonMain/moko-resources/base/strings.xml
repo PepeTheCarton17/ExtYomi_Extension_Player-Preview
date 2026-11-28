@@ -695,6 +695,8 @@
     <string name="action_sync_standalones">Sync with standalones</string>
     <string name="action_sync_with_extyomi">Sync with ExtYomi</string>
     <string name="standalone_sync_success">Standalone sync completed</string>
+    <string name="standalone_sync_working">Syncing… keep this screen open</string>
+    <string name="standalone_sync_success_detail">Standalone sync completed: %1$s</string>
     <string name="standalone_sync_failed">Standalone sync failed</string>
     <string name="standalone_sync_error_detail">Standalone sync failed: %1$s</string>
     <string name="pref_standalone_auto_sync">Automatic standalone sync</string>
