@@ -20,6 +20,17 @@ data class SyncMergeResult(
 )
 
 /**
+ * Ownership from an uninstalled/reinstalled standalone is stale: reinstalling changes the signing
+ * key, the package and the instanceId. Leaving it in the index makes the host discard that app's
+ * changes and emit tombstones for entries it can no longer see, which erases them on the other
+ * device. Only ids that are registered right now may keep ownership.
+ */
+fun SyncOwnerIndex.droppingStaleOwners(validInstanceIds: Collection<String>): SyncOwnerIndex {
+    val valid = validInstanceIds.toSet()
+    return SyncOwnerIndex(owners.filterValues { it in valid })
+}
+
+/**
  * Pure merge used by both the host provider and the standalone client.
  *
  * Conflict rule: per entry LWW by [SyncEntry.updatedAt]; a tombstone (an entry whose

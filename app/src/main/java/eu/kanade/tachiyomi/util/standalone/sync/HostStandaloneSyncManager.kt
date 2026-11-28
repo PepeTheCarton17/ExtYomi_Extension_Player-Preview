@@ -67,7 +67,7 @@ object HostStandaloneSyncManager {
         }
 
         val stored = store.load(app.instanceId)
-        val owners = store.loadOwners().owners
+        val owners = store.loadOwners().droppingStaleOwners(registeredInstanceIds(app)).owners
         val fresh = StandaloneSnapshotBuilder(
             sourceId = app.sourceId,
             kind = app.kind,
@@ -82,7 +82,11 @@ object HostStandaloneSyncManager {
                 mergedResult.owners[key] == null || mergedResult.owners[key] == app.instanceId
             },
         )
-        StandaloneSnapshotApplier(sourceId = app.sourceId, kind = app.kind).apply(merged)
+        StandaloneSnapshotApplier(
+            sourceId = app.sourceId,
+            kind = app.kind,
+            previous = stored,
+        ).apply(merged)
         store.save(merged)
         store.saveOwners(SyncOwnerIndex(mergedResult.owners))
 
@@ -114,6 +118,13 @@ object HostStandaloneSyncManager {
             "La standalone no aceptó la snapshot"
         }
     }
+
+    /** An owner from a reinstalled standalone is stale: its package and instanceId changed. */
+    private fun registeredInstanceIds(app: GeneratedStandaloneApp): Set<String> =
+        runCatching { Injekt.get<UiPreferences>().standaloneApps().get() }
+            .getOrDefault(emptyList())
+            .mapNotNull { it.instanceId.takeIf(String::isNotBlank) }
+            .toSet() + app.instanceId
 
     private fun hostDownloadsRootUri(): String? = runCatching {
         Injekt.get<StoragePreferences>().baseStorageDirectory().get()

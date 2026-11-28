@@ -80,8 +80,10 @@ class StandaloneDataProvider : ContentProvider() {
                     incoming.sourceId == StandaloneScope.sourceId &&
                         incoming.kind == StandaloneScope.kind,
                 ) { "Scope mismatch" }
-                StandaloneSnapshotApplier().apply(incoming)
-                StandaloneSyncStore(context).save(incoming)
+                val store = StandaloneSyncStore(context)
+                StandaloneSnapshotApplier(previous = store.load(StandaloneScope.instanceId))
+                    .apply(incoming)
+                store.save(incoming)
                 bundleOf(KEY_ACCEPTED to true, KEY_REVISION to incoming.revision)
             }
             else -> bundleOf(ERROR to "UNKNOWN_METHOD")
@@ -113,12 +115,14 @@ class StandaloneDataProvider : ContentProvider() {
                 require(incoming.sourceId == app.sourceId && incoming.kind == app.kind) {
                     "Scope mismatch"
                 }
-                val owners = store.loadOwners()
-                val merged = StandaloneSyncMerge.merge(store.load(app.instanceId), incoming, owners)
+                val previous = store.load(app.instanceId)
+                val owners = store.loadOwners().droppingStaleOwners(registeredInstanceIds(app))
+                val merged = StandaloneSyncMerge.merge(previous, incoming, owners)
                 val filtered = merged.payload.filterFor(app, merged.owners)
                 StandaloneSnapshotApplier(
                     sourceId = app.sourceId,
                     kind = app.kind,
+                    previous = previous,
                 ).apply(filtered)
                 store.save(filtered)
                 store.saveOwners(SyncOwnerIndex(merged.owners))
@@ -144,7 +148,7 @@ class StandaloneDataProvider : ContentProvider() {
         store: StandaloneSyncStore,
     ): StandaloneSyncPayload {
         val stored = store.load(app.instanceId)
-        val owners = store.loadOwners().owners
+        val owners = store.loadOwners().droppingStaleOwners(registeredInstanceIds(app)).owners
         val fresh = StandaloneSnapshotBuilder(
             sourceId = app.sourceId,
             kind = app.kind,
@@ -214,6 +218,13 @@ class StandaloneDataProvider : ContentProvider() {
         }
         return recovered
     }
+
+    /** Only the apps registered right now may own entries; reinstalled apps get a fresh ID. */
+    private fun registeredInstanceIds(app: GeneratedStandaloneApp): Set<String> =
+        runCatching { Injekt.get<UiPreferences>().standaloneApps().get() }
+            .getOrDefault(emptyList())
+            .mapNotNull { it.instanceId.takeIf(String::isNotBlank) }
+            .toSet() + app.instanceId
 
     private fun hasSingleUid(context: Context, caller: String): Boolean {
         val uid = runCatching { context.packageManager.getPackageUid(caller, 0) }.getOrNull()
