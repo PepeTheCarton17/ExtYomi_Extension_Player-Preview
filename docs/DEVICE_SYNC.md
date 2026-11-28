@@ -18,8 +18,10 @@ Los archivos descargados **no** se sincronizan.
 - Borrados de la biblioteca (tombstones).
 
 Los ajustes de vista/filtros de biblioteca se sincronizan **como una sincronización normal**, sin
-interruptor ni confirmación: modo de lista, orden, pestañas y badges de categorías, columnas y
-filtros de no leído/marcador.
+interruptor ni confirmación: modo de lista, orden (incluida la dirección), pestañas y badges de
+categorías, categorías ocultas, agrupación, columnas, series fijadas/agrupadas y todos los filtros
+(no leído, marcador, descargado, iniciado, completado, géneros e intervalo, para anime, manga y
+novela).
 
 **No se sincronizan** los archivos descargados. El **decodificador**, el **reproductor interno**, el
 **visor/lector** y los **ajustes avanzados** quedan fuera por defecto. Hay una opción
@@ -83,6 +85,14 @@ python3 tools/device-sync-relay/server.py --port 8789
 El campo debe valer `http://<host>:8789`. El relay solo ve ciphertext: no puede leer la
 biblioteca ni la contraseña.
 
+Cada buzón va dirigido a un destinatario: se publica en `/{pairing|sync}/<codigo>/<id-del-otro>`
+y solo ese dispositivo lo drena con su `GET`. Antes había un único buzón por código y el emisor
+podía consumir y descartar su propio mensaje mientras sondeaba respuestas: por eso WSA recibía un
+cambio una vez y luego ninguno. Los mensajes cifrados también validan el destinatario (`to`) antes
+de aplicarse. Hay que instalar la versión corregida en **ambos** dispositivos y, si usas relay
+propio, **reiniciarlo con la versión corregida de `server.py`**: un servidor antiguo sigue sirviendo
+una sola bandeja por código y seguirá descartando mensajes aunque las apps estén actualizadas.
+
 ## Cifrado y borrado por ACK
 
 - La clave se deriva con PBKDF2‑HMAC‑SHA256 del código de 8 dígitos y la contraseña de 10 letras
@@ -107,9 +117,14 @@ biblioteca ni la contraseña.
   abrir Ajustes. La dirección del relay del QR también se guarda en el segundo dispositivo.
   Cualquiera de los dos puede dejar respuestas cifradas en el buzón del otro si la conexión directa
   falla: el flujo es bidireccional. La contraseña sigue sin viajar por la red ni aparecer en el QR.
-- **Cambios por recibir** se muestra mientras la bandeja se aplica en el siguiente ciclo (5 s); si
-  se aplica todo al instante, el contador vuelve a 0. **Cambios por enviar** baja cuando llegan los
-  ACK de todos los dispositivos, no cuando se envía el lote.
+- **Cambios por recibir** se muestra durante ~2 s mientras llega la bandeja y se aplica en el
+  siguiente ciclo; si se aplica todo al instante, el contador vuelve a 0. **Cambios por enviar**
+  baja cuando llegan los ACK de todos los dispositivos, no cuando se envía el lote.
+- La pantalla explica el estado real: «comprobando conexión», «conectado», «esperando ACK»,
+  «cambios recibidos», «en el buzón del otro dispositivo» o «sin ruta este ciclo (se reintentará)».
+  **Confirmar contraseña** y **Sincronizar ahora** muestran un indicador de carga mientras se
+  comprueba el secreto o se recorre la biblioteca. Un fallo parcial (un dispositivo dormido) ya no
+  se muestra como «no se pudo conectar» mientras otros cambios sí se entregan.
 - Solo queda un cursor de ACK por dispositivo; no se envían instantáneas completas salvo el primer
   emparejamiento y la recuperación.
 

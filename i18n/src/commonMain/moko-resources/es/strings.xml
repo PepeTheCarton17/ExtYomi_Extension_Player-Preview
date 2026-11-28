@@ -821,6 +821,8 @@
     <string name="action_sync_standalones">Sincronizar con standalones</string>
     <string name="action_sync_with_extyomi">Sincronizar con ExtYomi</string>
     <string name="standalone_sync_success">Sincronización completada</string>
+    <string name="standalone_sync_working">Sincronizando… mantén esta pantalla abierta</string>
+    <string name="standalone_sync_success_detail">Sincronización completada: %1$s</string>
     <string name="standalone_sync_failed">No se pudo sincronizar</string>
     <string name="standalone_sync_error_detail">No se pudo sincronizar: %1$s</string>
     <string name="pref_standalone_auto_sync">Sincronización automática con standalone</string>
@@ -864,6 +866,15 @@
     <string name="device_sync_password_hint">La contraseña no está en el QR ni en el enlace: cópiala del otro dispositivo.</string>
     <string name="device_sync_wsa_host_hint">Este dispositivo está detrás de NAT (WSA/emulador), así que el otro no puede conectarse aquí. Publica desde el teléfono y escanea su QR desde aquí. Las respuestas se recogen automáticamente.</string>
     <string name="device_sync_wsa_join_hint">Este dispositivo está detrás de NAT (WSA/emulador). Mantén esta pantalla abierta: las confirmaciones y las respuestas de sincronización se recogen automáticamente por esta conexión.</string>
+    <string name="device_sync_status_idle">Aún no hay sincronización. Publica desde un dispositivo y únete desde el otro.</string>
+    <string name="device_sync_status_working">Comprobando la conexión e intercambiando cambios…</string>
+    <string name="device_sync_status_connected">Conectado. Esperando cambios nuevos.</string>
+    <string name="device_sync_status_waiting_ack">Cambios enviados. Esperando a que el otro dispositivo los confirme.</string>
+    <string name="device_sync_status_incoming">Cambios recibidos. Aplicándolos ahora (hasta 5 s).</string>
+    <string name="device_sync_status_mailbox">Ahora mismo no hay conexión directa. Los cambios quedaron en el buzón del otro dispositivo y se recogerán automáticamente.</string>
+    <string name="device_sync_status_no_path">No se encontró ruta al otro dispositivo en este ciclo. Los cambios siguen en cola y se reintentarán solos.</string>
+    <string name="device_sync_password_working">Comprobando contraseña…</string>
+    <string name="device_sync_sync_working">Sincronizando…</string>
     <string name="information_cloudflare_help">Toca aquí para solucionar problemas de acceso con Cloudflare</string>
     <string name="download_cache_invalidated">Se ha borrado el índice de descargas</string>
     <string name="track_activity_name">Iniciar sesión en el servicio</string>

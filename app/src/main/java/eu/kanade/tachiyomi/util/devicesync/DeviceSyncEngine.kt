@@ -27,6 +27,15 @@ enum class DeviceSyncPhase {
     PAIRED,
 }
 
+/** How the last encrypted message actually reached the other device. */
+enum class DeviceSyncDelivery {
+    NONE,
+    DIRECT,
+    RELAY,
+    MAILBOX,
+    FAILED,
+}
+
 data class DeviceSyncUiState(
     val phase: DeviceSyncPhase = DeviceSyncPhase.IDLE,
     val deviceId: String = "",
@@ -50,15 +59,21 @@ data class DeviceSyncUiState(
     val incomingPending: Int = 0,
     val lastSyncAt: Long = 0L,
     val error: String? = null,
+    /** The user asked to confirm the password and we are still checking it. */
+    val passwordBusy: Boolean = false,
+    /** The user tapped "Sync now" and that manual cycle is still running. */
+    val syncBusy: Boolean = false,
+    val lastDelivery: DeviceSyncDelivery = DeviceSyncDelivery.NONE,
 )
 
 /** Owns the pairing state machine, the encrypted outbox and the ACK lifecycle. */
 object DeviceSyncEngine {
 
     private const val NO_PATH_ERROR =
-        "No se pudo contactar con el otro dispositivo. Comprueba que ambos estén en la misma Wi-Fi " +
-            "(sin aislamiento de punto de acceso). Si uno es WSA/emulador, publica desde el teléfono " +
-            "y escanea su QR desde WSA; las respuestas se recogen automáticamente."
+        "No se pudo contactar con el otro dispositivo en este ciclo. Los cambios siguen en cola y " +
+            "se reintentarán solos. Comprueba la Wi-Fi (sin aislamiento de punto de acceso) y que el " +
+            "servidor relay siga accesible si los dispositivos están en redes distintas. Si uno es " +
+            "WSA/emulador, publica desde el teléfono y escanea su QR desde WSA."
 
     // One envelope with thousands of entries tried to allocate ~129 MB in a single char array
     // and crashed the app. Every message below is bounded well under that limit.
@@ -89,6 +104,7 @@ object DeviceSyncEngine {
     private var pollJob: Job? = null
     private var relayJob: Job? = null
     private var syncJob: Job? = null
+    private var drainJob: Job? = null
     private var seq = 0L
     private var collector: Job? = null
     private val scheduled = AtomicBoolean(false)
@@ -312,33 +328,39 @@ object DeviceSyncEngine {
             )
             return
         }
-        key = DeviceSyncCrypto.deriveKey(target.code, normalized)
-        // Keep the secret in app-private storage so a restart can derive the key again. It is
-        // never sent over the network and never added to the QR/invite.
-        config = config.copy(code = target.code, password = normalized)
-        requireStore().saveConfig(config)
-        val message = DeviceSyncMessage(
-            type = "VERIFY",
-            from = config.deviceId,
-            deviceName = Build.MODEL,
-            deviceModel = Build.MODEL,
-            endpoint = transport.endpoint,
-            endpoints = transport.endpoints,
-        )
-        pendingVerify = message
-        val delivered = sendEncrypted(target, message)
-        if (delivered) {
-            // Possession of the shared secret is proven by a VERIFY the host can decrypt.
-            // Do not wait for CONFIRM/VERIFY_ACK: those are best effort and may be queued
-            // on the host, to be collected by pollHost() over this same outgoing connection.
-            persistJoinerPeer(target)
-            scope.launch { recordLocalChanges() }
+        _state.value = _state.value.copy(passwordBusy = true, error = null)
+        try {
+            key = DeviceSyncCrypto.deriveKey(target.code, normalized)
+            // Keep the secret in app-private storage so a restart can derive the key again. It is
+            // never sent over the network and never added to the QR/invite.
+            config = config.copy(code = target.code, password = normalized)
+            requireStore().saveConfig(config)
+            val message = DeviceSyncMessage(
+                type = "VERIFY",
+                from = config.deviceId,
+                to = target.from,
+                deviceName = Build.MODEL,
+                deviceModel = Build.MODEL,
+                endpoint = transport.endpoint,
+                endpoints = transport.endpoints,
+            )
+            pendingVerify = message
+            val delivered = sendEncrypted(target, message)
+            if (delivered) {
+                // Possession of the shared secret is proven by a VERIFY the host can decrypt.
+                // Do not wait for CONFIRM/VERIFY_ACK: those are best effort and may be queued
+                // on the host, to be collected by pollHost() over this same outgoing connection.
+                persistJoinerPeer(target)
+                scope.launch { recordLocalChanges() }
+            }
+            _state.value = _state.value.copy(
+                phase = if (delivered) DeviceSyncPhase.PAIRED else DeviceSyncPhase.JOIN_WAITING_ACK,
+                joinConfirmed = true,
+                error = if (delivered) null else NO_PATH_ERROR,
+            )
+        } finally {
+            _state.value = _state.value.copy(passwordBusy = false)
         }
-        _state.value = _state.value.copy(
-            phase = if (delivered) DeviceSyncPhase.PAIRED else DeviceSyncPhase.JOIN_WAITING_ACK,
-            joinConfirmed = true,
-            error = if (delivered) null else NO_PATH_ERROR,
-        )
     }
 
     private suspend fun persistJoinerPeer(target: DevicePairingMessage) {
@@ -359,6 +381,16 @@ object DeviceSyncEngine {
             requireStore().saveConfig(config)
         }
         _state.value = _state.value.copy(peers = peers)
+    }
+
+    /** UI entry point: scans local changes and exposes a real loading state while it runs. */
+    suspend fun syncNowManually() {
+        _state.value = _state.value.copy(syncBusy = true, error = null)
+        try {
+            recordLocalChanges()
+        } finally {
+            _state.value = _state.value.copy(syncBusy = false)
+        }
     }
 
     suspend fun syncNow() = withContext(Dispatchers.IO) {
@@ -417,10 +449,14 @@ object DeviceSyncEngine {
             }
             flushPendingAcks(peers)
             refreshCounts(peers)
-            val ok = delivered.isNotEmpty() && delivered.all { it }
+            // A partial failure must not claim "no connection" while data is actually flowing:
+            // one peer can be asleep while another acknowledged everything. Only say there is
+            // no path when nothing at all was delivered in this cycle.
+            val successes = delivered.count { it }
+            val anyDelivered = successes > 0
             _state.value = _state.value.copy(
-                lastSyncAt = if (ok) System.currentTimeMillis() else _state.value.lastSyncAt,
-                error = if (ok) null else NO_PATH_ERROR,
+                lastSyncAt = if (anyDelivered) System.currentTimeMillis() else _state.value.lastSyncAt,
+                error = if (anyDelivered || delivered.isEmpty()) null else NO_PATH_ERROR,
             )
         }
     }
@@ -565,6 +601,8 @@ object DeviceSyncEngine {
         relayJob = null
         syncJob?.cancel()
         syncJob = null
+        drainJob?.cancel()
+        drainJob = null
         collector?.cancel()
         collector = null
         joinEndpoints = emptyList()
@@ -668,11 +706,13 @@ object DeviceSyncEngine {
                 if (body.length > MAX_ENVELOPE_CHARS) return
                 val envelope = runCatching { body.toDeviceSyncEnvelope() }.getOrNull() ?: return
                 if (envelope.from == config.deviceId) return
+                if (envelope.to.isNotBlank() && envelope.to != config.deviceId) return
                 val activeKey = key ?: return
                 val message = runCatching {
                     DeviceSyncCrypto.decrypt(envelope.iv, envelope.ciphertext, activeKey)
                         .toDeviceSyncMessage()
                 }.getOrNull() ?: return
+                if (message.to.isNotBlank() && message.to != config.deviceId) return
                 when (message.type) {
                     "VERIFY" -> {
                         // Reaching here means the payload decrypted with the code + password.
@@ -747,6 +787,7 @@ object DeviceSyncEngine {
                         // cannot lose remote changes.
                         requireStore().enqueueIncoming(message.from, message.events)
                         refreshCounts(requireStore().loadConfig().peers)
+                        scheduleInboxDrain()
                     }
                     "ACK" -> {
                         requireStore().acknowledge(message.from, message.acks)
@@ -777,6 +818,19 @@ object DeviceSyncEngine {
                 pollRelay()
                 delay(3_000L)
             }
+        }
+    }
+
+    /**
+     * Show remote events in "Changes to receive" for a moment before applying them. The previous
+     * code drained immediately, so the counter was effectively always zero even when data arrived.
+     */
+    private fun scheduleInboxDrain() {
+        if (drainJob?.isActive == true) return
+        drainJob = scope.launch {
+            delay(2_000L)
+            runCatching { drainInbox() }
+            drainJob = null
         }
     }
 
@@ -886,7 +940,7 @@ object DeviceSyncEngine {
         val code = (if (joining) joinTarget?.code ?: config.code else config.code).orEmpty()
         if (code.isBlank() || transport.relayUrl.isBlank()) return
         listOf("/pairing", "/sync").forEach { path ->
-            transport.relayPoll(code, path).getOrNull()?.forEach { body ->
+            transport.relayPoll(code, path, config.deviceId).getOrNull()?.forEach { body ->
                 handleMessage(path, body)
             }
         }
@@ -910,7 +964,10 @@ object DeviceSyncEngine {
         val attempts = mutableListOf<Result<Unit>>()
         val relay = pairing.relayUrl
         val endpoints = endpointsOf(target)
-        if (relay.isNotBlank()) attempts += transport.relaySend(target.code, "/pairing", body)
+        val recipient = pairing.to.ifBlank { target.from }
+        if (relay.isNotBlank() && recipient.isNotBlank()) {
+            attempts += transport.relaySend(target.code, "/pairing", body, recipient)
+        }
         endpoints.forEach { endpoint ->
             if (attempts.lastOrNull()?.isSuccess == true) return@forEach
             attempts += transport.send(endpoint, "/pairing", body)
@@ -956,12 +1013,26 @@ object DeviceSyncEngine {
         ).toJson()
         val relay = target.relayUrl.ifBlank { transport.relayUrl }
         val attempts = mutableListOf<Result<Unit>>()
-        if (relay.isNotBlank()) attempts += transport.relaySend(target.code, "/sync", envelope)
+        var relaySent = false
+        var directSent = false
+        if (relay.isNotBlank() && target.from.isNotBlank()) {
+            val result = transport.relaySend(target.code, "/sync", envelope, target.from)
+            relaySent = result.isSuccess
+            attempts += result
+        }
         endpointsOf(target).forEach { endpoint ->
             if (attempts.lastOrNull()?.isSuccess == true) return@forEach
-            attempts += transport.send(endpoint, "/sync", envelope)
+            val result = transport.send(endpoint, "/sync", envelope)
+            if (result.isSuccess) directSent = true
+            attempts += result
         }
-        if (attempts.any { it.isSuccess }) return true
+        if (attempts.any { it.isSuccess }) {
+            _state.value = _state.value.copy(
+                lastDelivery = if (directSent) DeviceSyncDelivery.DIRECT else DeviceSyncDelivery.RELAY,
+            )
+            return true
+        }
+        _state.value = _state.value.copy(lastDelivery = DeviceSyncDelivery.FAILED)
         if (target.from.isBlank()) return false
         val dedupe = listOf(
             message.type,
@@ -971,6 +1042,7 @@ object DeviceSyncEngine {
         ).joinToString(":")
         // Only the envelope (iv + ciphertext) is stored; the key and plaintext never leave.
         transport.enqueueReply(target.from, "/sync", envelope, dedupe)
+        _state.value = _state.value.copy(lastDelivery = DeviceSyncDelivery.MAILBOX)
         return true
     }
 

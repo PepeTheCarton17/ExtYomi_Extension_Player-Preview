@@ -205,11 +205,24 @@ class DeviceSyncTransport {
         }
     }
 
+    /**
+     * Relay mailboxes are addressed to one recipient. Without the recipient both devices poll the
+     * same bucket and the sender can drain (and discard) its own ciphertext before the peer does.
+     */
+    internal fun relayPath(code: String, path: String, recipient: String): String =
+        "${path.trim().trimEnd('/')}/${code.trim()}/${recipient.trim()}"
+
     /** Relay endpoints are simple mailboxes; only ciphertext is stored there. */
-    suspend fun relaySend(code: String, path: String, body: String): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun relaySend(
+        code: String,
+        path: String,
+        body: String,
+        recipient: String,
+    ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             require(relayUrl.isNotBlank()) { "No relay configured" }
-            val url = "${relayUrl.trimEnd('/')}$path/$code"
+            require(recipient.isNotBlank()) { "No relay recipient" }
+            val url = "${relayUrl.trimEnd('/')}${relayPath(code, path, recipient)}"
             val request = Request.Builder()
                 .url(url)
                 .post(body.toRequestBody(JSON))
@@ -220,10 +233,15 @@ class DeviceSyncTransport {
         }
     }
 
-    suspend fun relayPoll(code: String, path: String): Result<List<String>> = withContext(Dispatchers.IO) {
+    suspend fun relayPoll(
+        code: String,
+        path: String,
+        recipient: String,
+    ): Result<List<String>> = withContext(Dispatchers.IO) {
         runCatching {
             require(relayUrl.isNotBlank()) { "No relay configured" }
-            val url = "${relayUrl.trimEnd('/')}$path/$code"
+            require(recipient.isNotBlank()) { "No relay recipient" }
+            val url = "${relayUrl.trimEnd('/')}${relayPath(code, path, recipient)}"
             val request = Request.Builder().url(url).get().build()
             client.newCall(request).execute().use { response ->
                 require(response.isSuccessful) { "Relay replied ${response.code}" }

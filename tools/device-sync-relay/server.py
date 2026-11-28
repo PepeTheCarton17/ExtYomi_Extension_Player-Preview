@@ -1,6 +1,10 @@
 """Optional ExtYomi device-sync relay.
 
-Only ciphertext is stored; a mailbox is cleared as soon as the peer polls it.
+Only ciphertext is stored. A mailbox belongs to ONE recipient: the sender writes to
+``/{kind}/{code}/{recipient}`` and only that recipient's GET drains it. A single mailbox
+per code used to let a device consume and discard its own messages, which made sync
+look like it worked once and then stopped forever.
+
 Run with: python3 server.py --port 8789
 
 The app's "Servidor relay" field should point to http://<this-host>:8789
@@ -14,8 +18,29 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlparse
 
 MAILBOX_TTL = 15 * 60
+# (kind, code, recipient) -> [(timestamp, body)]
 mailboxes = {}
 lock = threading.Lock()
+
+
+def parse_path(path):
+    """Return (kind, code, recipient) for a valid mailbox path, else None."""
+    parts = unquote(urlparse(path).path).strip("/").split("/")
+    if len(parts) != 3 or parts[0] not in ("pairing", "sync"):
+        return None
+    kind, code, recipient = parts
+    if not code.isdigit() or len(code) != 8 or not recipient:
+        return None
+    return kind, code, recipient
+
+
+def sweep(now):
+    for key in list(mailboxes):
+        fresh = [(stamp, body) for stamp, body in mailboxes[key] if now - stamp < MAILBOX_TTL]
+        if fresh:
+            mailboxes[key] = fresh
+        else:
+            mailboxes.pop(key, None)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -37,31 +62,26 @@ class Handler(BaseHTTPRequestHandler):
         self._reply(204, "")
 
     def do_POST(self):
-        path = urlparse(self.path).path
-        if not path.startswith(("/pairing/", "/sync/")):
-            self._reply(404, "[]")
-            return
-        code = unquote(path.split("/", 2)[2])
-        if not code.isdigit() or len(code) != 8:
+        target = parse_path(self.path)
+        if target is None:
             self._reply(400, "[]")
             return
         length = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(length).decode("utf-8", "replace")
         with lock:
-            bucket = mailboxes.setdefault(code, [])
-            bucket.append((time.time(), body))
+            mailboxes.setdefault(target, []).append((time.time(), body))
         self._reply(200, "{}")
 
     def do_GET(self):
-        path = urlparse(self.path).path
-        if not path.startswith(("/pairing/", "/sync/")):
-            self._reply(404, "[]")
+        target = parse_path(self.path)
+        if target is None:
+            self._reply(400, "[]")
             return
-        code = unquote(path.split("/", 2)[2])
-        now = time.time()
         with lock:
-            bucket = mailboxes.pop(code, [])
-            messages = [body for stamp, body in bucket if now - stamp < MAILBOX_TTL]
+            sweep(time.time())
+            # Destructive read, but only of THIS recipient's mailbox. The sender can no
+            # longer drain the message it just posted while polling for replies.
+            messages = [body for _, body in mailboxes.pop(target, [])]
         self._reply(200, json.dumps(messages))
 
 

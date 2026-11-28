@@ -10,6 +10,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.util.concurrent.atomic.AtomicBoolean
@@ -55,18 +56,31 @@ object StandaloneAutoSync {
         return runSuspended(app)
     }
 
+    /**
+     * Manual button: always runs, even when automatic sync is switched off, but shares the mutex
+     * with [request] so a click cannot race an automatic sync over the same snapshot files.
+     */
+    suspend fun runNow(context: Context): Result<String> = withContext(Dispatchers.IO) {
+        runMutex.withLock {
+            perform(context.applicationContext)
+        }
+    }
+
     private suspend fun runSuspended(context: Context): Result<String>? = runMutex.withLock {
         val now = System.currentTimeMillis()
         // Only suppresses an immediate duplicate (foreground + observer + fallback), never a
         // real change: those arrive through [request] after the coalescing window.
         if (now - lastRun.get() < MIN_RUN_GAP_MS) return@withLock null
         lastRun.set(now)
+        perform(context)
+    }
+
+    private suspend fun perform(context: Context): Result<String> =
         if (StandaloneScope.isActive) {
             StandaloneSyncClient.syncNow(context)
         } else {
             HostStandaloneSyncManager.syncAll(context)
         }
-    }
 
     private fun isEnabled(context: Context): Boolean =
         Injekt.get<UiPreferences>().standaloneAutoSync().get()

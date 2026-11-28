@@ -12,6 +12,16 @@ import org.junit.jupiter.api.Test
 class DeviceSyncFoundationTest {
 
     @Test
+    fun `relay mailbox path is unique per recipient`() {
+        val transport = DeviceSyncTransport()
+        val phone = transport.relayPath("12345678", "/sync", "phone-id")
+        val wsa = transport.relayPath("12345678", "/sync", "wsa-id")
+        assertEquals("/sync/12345678/phone-id", phone)
+        assertEquals("/sync/12345678/wsa-id", wsa)
+        assertEquals("/pairing/12345678/phone-id", transport.relayPath("12345678", "/pairing", "phone-id"))
+    }
+
+    @Test
     fun `base64 round trips arbitrary bytes`() {
         val bytes = ByteArray(256) { it.toByte() }
         assertEquals(bytes.toList(), DeviceBase64.decode(DeviceBase64.encode(bytes)).toList())
@@ -196,7 +206,17 @@ class DeviceSyncFoundationTest {
     fun `library settings sync always but device settings require consent`() {
         val libraryKeys = listOf(
             "pref_display_mode_library",
+            "library_sorting_mode",
+            "animelib_sorting_mode",
+            "display_category_tabs",
+            "hidden_categories",
+            "auto_hide_anime_categories",
+            "library_group_mode_anime",
+            "library_pinned_anime_ids",
             "pref_filter_animelib_unread_v2",
+            "pref_filter_novellib_bookmarked_v2",
+            "pref_filter_animelib_genres_include",
+            "pref_filter_animelib_completed_v2",
         )
         val deviceKeys = listOf(
             // Decodificador
