@@ -174,8 +174,10 @@ object DeviceSyncEngine {
             }
             // Only an explicit "Publish this device" keeps the invite after a restart. A joiner
             // also stores the code and its password, but it must never become a QR publisher.
-            config.hosting && !natHint &&
-                config.code.isNotBlank() && config.password.isNotBlank() -> {
+            config.hosting &&
+                !natHint &&
+                config.code.isNotBlank() &&
+                config.password.isNotBlank() -> {
                 DeviceSyncPhase.HOST_PASSWORD_READY
             }
             else -> DeviceSyncPhase.IDLE
