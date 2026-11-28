@@ -258,10 +258,15 @@ class DeviceSyncStore(context: Context) {
 
     suspend fun forgetPeer(peerId: String) = withLock {
         val config = read(configFile)?.toDeviceSyncConfig() ?: DeviceSyncConfig()
-        write(
-            configFile,
-            config.copy(peers = config.peers.filterNot { it.deviceId == peerId }).toJson(),
-        )
+        val peers = config.peers.filterNot { it.deviceId == peerId }
+        // Forgetting the last device also ends the publish session: the QR belongs to an explicit
+        // "Publish this device" action, not to a code/password left in storage.
+        val next = if (peers.isEmpty()) {
+            config.copy(peers = peers, hosting = false, joinTarget = null)
+        } else {
+            config.copy(peers = peers)
+        }
+        write(configFile, next.toJson())
         val acks = runCatching {
             deviceSyncJson.decodeFromString<MutableMap<String, MutableMap<String, Long>>>(
                 read(acksFile).orEmpty(),

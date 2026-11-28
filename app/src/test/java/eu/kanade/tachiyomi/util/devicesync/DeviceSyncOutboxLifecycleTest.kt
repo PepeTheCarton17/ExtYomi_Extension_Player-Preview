@@ -123,4 +123,49 @@ class DeviceSyncOutboxLifecycleTest {
         assertEquals(target, restored.joinTarget)
         assertEquals("host-id", restored.joinTarget?.from)
     }
+
+    @Test
+    fun `forgetting the last peer ends the published session`() = runTest {
+        val store = store()
+        store.saveConfig(
+            DeviceSyncConfig(
+                deviceId = "phone",
+                code = "12345678",
+                password = "ABCDEF23456",
+                hosting = true,
+                peers = listOf(peer("wsa")),
+            ),
+        )
+
+        store.forgetPeer("wsa")
+        val config = store.loadConfig()
+        assertTrue(config.peers.isEmpty())
+        assertEquals(false, config.hosting)
+        assertEquals(null, config.joinTarget)
+    }
+
+    @Test
+    fun `forgetting one of two peers keeps the published session`() = runTest {
+        val store = store()
+        store.saveConfig(
+            DeviceSyncConfig(
+                deviceId = "phone",
+                code = "12345678",
+                password = "ABCDEF23456",
+                hosting = true,
+                peers = listOf(peer("phone2"), peer("wsa")),
+            ),
+        )
+
+        store.forgetPeer("phone2")
+        val config = store.loadConfig()
+        assertEquals(listOf("wsa"), config.peers.map { it.deviceId })
+        assertEquals(true, config.hosting)
+    }
+
+    @Test
+    fun `configs written before the hosting flag do not publish a QR`() {
+        val legacy = """{"deviceId":"phone","code":"12345678","password":"ABCDEF23456","peers":[]}"""
+        assertEquals(false, deviceSyncJson.decodeFromString<DeviceSyncConfig>(legacy).hosting)
+    }
 }

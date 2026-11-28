@@ -141,6 +141,12 @@ object DeviceSyncEngine {
         if (key == null && config.password.isNotBlank() && config.code.isNotBlank()) {
             key = runCatching { DeviceSyncCrypto.deriveKey(config.code, config.password) }.getOrNull()
         }
+        val natHint = DeviceSyncNat.isVirtualAndroid(Build.MANUFACTURER, Build.MODEL, Build.BRAND)
+        // WSA/emulators cannot be reached from the phone, so never restore a host session there.
+        if (natHint && config.hosting) {
+            config = config.copy(hosting = false)
+            requireStore().saveConfig(config)
+        }
         val phase = when {
             // A paired device stays paired across restarts. Never leave it in IDLE: the periodic
             // drain/sync loop used to require PAIRED, so both outboxes froze until re-pairing.
@@ -166,9 +172,12 @@ object DeviceSyncEngine {
                     .distinct()
                 DeviceSyncPhase.JOIN_WAITING_PASSWORD
             }
-            // A host that restarted before the joiner connected still owns a valid code and
-            // password. Keep showing the invite instead of dumping it back to the empty screen.
-            config.code.isNotBlank() && config.password.isNotBlank() -> {
+            // Only an explicit "Publish this device" keeps the invite after a restart. A joiner
+            // also stores the code and its password, but it must never become a QR publisher.
+            config.hosting &&
+                !natHint &&
+                config.code.isNotBlank() &&
+                config.password.isNotBlank() -> {
                 DeviceSyncPhase.HOST_PASSWORD_READY
             }
             else -> DeviceSyncPhase.IDLE
@@ -180,7 +189,7 @@ object DeviceSyncEngine {
             phase = phase,
             peers = config.peers,
             syncDeviceSettings = config.syncDeviceSettings,
-            natHint = DeviceSyncNat.isVirtualAndroid(Build.MANUFACTURER, Build.MODEL, Build.BRAND),
+            natHint = natHint,
             relayUrl = config.relayUrl,
             code = config.code,
             endpoint = transport.endpoint,
@@ -221,6 +230,7 @@ object DeviceSyncEngine {
             password = DevicePairing.newPassword(),
             relayUrl = relayUrl.trim(),
             peers = emptyList(),
+            hosting = true,
             joinTarget = null,
         )
         requireStore().saveConfig(config)
@@ -301,6 +311,8 @@ object DeviceSyncEngine {
             code = invite.code,
             relayUrl = invite.relayUrl,
             peers = config.peers.filter { it.code == invite.code },
+            hosting = false,
+            password = "",
         )
         requireStore().saveConfig(config)
         // Use only the relay carried by the invite: a stale local relay would send the
@@ -386,7 +398,12 @@ object DeviceSyncEngine {
             key = DeviceSyncCrypto.deriveKey(target.code, normalized)
             // Keep the secret in app-private storage so a restart can derive the key again. It is
             // never sent over the network and never added to the QR/invite.
-            config = config.copy(code = target.code, password = normalized, joinTarget = target)
+            config = config.copy(
+                code = target.code,
+                password = normalized,
+                hosting = false,
+                joinTarget = target,
+            )
             requireStore().saveConfig(config)
             val message = buildVerifyMessage(target)
             pendingVerify = message
@@ -639,7 +656,16 @@ object DeviceSyncEngine {
     suspend fun forgetPeer(peerId: String) {
         requireStore().forgetPeer(peerId)
         config = requireStore().loadConfig()
-        _state.value = _state.value.copy(peers = config.peers)
+        val phase = if (config.peers.isEmpty() && _state.value.phase != DeviceSyncPhase.IDLE) {
+            DeviceSyncPhase.IDLE
+        } else {
+            _state.value.phase
+        }
+        _state.value = _state.value.copy(
+            phase = phase,
+            peers = config.peers,
+            passwordVisible = phase == DeviceSyncPhase.HOST_PASSWORD_READY,
+        )
     }
 
     fun stop() {
@@ -663,6 +689,7 @@ object DeviceSyncEngine {
         transport.stop()
         _state.value = _state.value.copy(
             phase = if (_state.value.phase != DeviceSyncPhase.IDLE) DeviceSyncPhase.PAIRED else DeviceSyncPhase.IDLE,
+            passwordVisible = false,
             lastDelivery = DeviceSyncDelivery.NONE,
             linkCheck = DeviceSyncLinkCheck.IDLE,
         )
