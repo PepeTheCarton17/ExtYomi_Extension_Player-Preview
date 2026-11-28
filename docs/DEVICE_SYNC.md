@@ -89,7 +89,9 @@ Cada buzón va dirigido a un destinatario: se publica en `/{pairing|sync}/<codig
 y solo ese dispositivo lo drena con su `GET`. Antes había un único buzón por código y el emisor
 podía consumir y descartar su propio mensaje mientras sondeaba respuestas: por eso WSA recibía un
 cambio una vez y luego ninguno. Los mensajes cifrados también validan el destinatario (`to`) antes
-de aplicarse. Hay que instalar la versión corregida en **ambos** dispositivos.
+de aplicarse. Hay que instalar la versión corregida en **ambos** dispositivos y, si usas relay
+propio, **reiniciarlo con la versión corregida de `server.py`**: un servidor antiguo sigue sirviendo
+una sola bandeja por código y seguirá descartando mensajes aunque las apps estén actualizadas.
 
 ## Cifrado y borrado por ACK
 

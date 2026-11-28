@@ -81,6 +81,10 @@ cambio ocurre en el mismo Home, sin abrir otra pantalla.
 
 La biblioteca está disponible siempre en la barra de una standalone y no se puede ocultar; el
 botón de sincronizar aparece en la barra de biblioteca tanto en ExtYomi como en cada app generada.
+Al pulsarlo aparece «Sincronizando… mantén esta pantalla abierta» de inmediato, porque una
+biblioteca grande puede tardar minutos en fusionarse. El botón manual comparte bloqueo con la
+sincronización automática para que ambas no peleen por los mismos archivos, y el mensaje final
+muestra cuántas apps se sincronizaron y los errores parciales; antes parecía que no pasaba nada.
 
 - ExtYomi sincroniza con todas las apps registradas; una standalone sincroniza solo con su host.
   **El host y su standalone deben estar en el mismo dispositivo.** La clave de firma se crea en el
