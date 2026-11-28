@@ -209,6 +209,11 @@ data class DeviceSyncConfig(
     val relayUrl: String = "",
     val syncDeviceSettings: Boolean = false,
     val peers: List<DeviceSyncPeer> = emptyList(),
+    /**
+     * An unfinished join survives a restart. The joiner must be able to get back to the password
+     * screen instead of silently appearing paired while the host never verified the secret.
+     */
+    val joinTarget: DevicePairingMessage? = null,
 )
 
 fun DeviceSyncSnapshot.toJson(): String = deviceSyncJson.encodeToString(this)

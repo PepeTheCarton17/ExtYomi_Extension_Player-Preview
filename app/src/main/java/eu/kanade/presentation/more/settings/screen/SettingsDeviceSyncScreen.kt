@@ -50,6 +50,7 @@ import eu.kanade.tachiyomi.util.devicesync.DevicePairing
 import eu.kanade.tachiyomi.util.devicesync.DevicePairingQr
 import eu.kanade.tachiyomi.util.devicesync.DeviceSyncDelivery
 import eu.kanade.tachiyomi.util.devicesync.DeviceSyncEngine
+import eu.kanade.tachiyomi.util.devicesync.DeviceSyncLinkCheck
 import eu.kanade.tachiyomi.util.devicesync.DeviceSyncPhase
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
@@ -109,16 +110,45 @@ object SettingsDeviceSyncScreen : SearchableSettings {
         val invite = remember(pairingQr) { pairingQr?.let { DevicePairing.encodeInvite(it) }.orEmpty() }
         val qrBitmap = remember(pairingQr) { pairingQr?.let { renderQr(DevicePairing.encodeQr(it)) } }
         val pairingBusy = state.phase != DeviceSyncPhase.IDLE && state.phase != DeviceSyncPhase.PAIRED
+        val errorText = when (state.error) {
+            DeviceSyncEngine.PASSWORD_REJECTED ->
+                stringResource(MR.strings.device_sync_status_password_rejected)
+            DeviceSyncEngine.PASSWORD_INVALID_FORMAT ->
+                stringResource(MR.strings.device_sync_status_password_invalid)
+            DeviceSyncEngine.MAILBOX_QUEUED ->
+                stringResource(MR.strings.device_sync_status_mailbox)
+            DeviceSyncEngine.MESSAGE_TOO_LARGE ->
+                stringResource(MR.strings.device_sync_status_message_too_large)
+            null -> null
+            else -> stringResource(MR.strings.device_sync_status_no_path)
+        }
         val statusText = when {
             state.passwordBusy -> stringResource(MR.strings.device_sync_password_working)
             state.syncBusy -> stringResource(MR.strings.device_sync_status_working)
-            state.error != null -> stringResource(MR.strings.device_sync_status_no_path)
+            errorText != null -> errorText
             state.incomingPending > 0 -> stringResource(MR.strings.device_sync_status_incoming)
+            state.phase == DeviceSyncPhase.JOIN_WAITING_ACK ->
+                stringResource(MR.strings.device_sync_status_verify_pending)
             state.lastDelivery == DeviceSyncDelivery.MAILBOX ->
                 stringResource(MR.strings.device_sync_status_mailbox)
             state.outgoingPending > 0 -> stringResource(MR.strings.device_sync_status_waiting_ack)
-            state.lastSyncAt > 0L -> stringResource(MR.strings.device_sync_status_connected)
+            state.peers.isNotEmpty() -> stringResource(MR.strings.device_sync_status_connected)
             else -> stringResource(MR.strings.device_sync_status_idle)
+        }
+        val linkCheckText = when (state.linkCheck) {
+            DeviceSyncLinkCheck.OK -> stringResource(MR.strings.device_sync_status_link_ok)
+            DeviceSyncLinkCheck.FAILED -> stringResource(MR.strings.device_sync_status_link_failed)
+            else -> null
+        }
+        // Engine exceptions are not localized; keep the detail visible for diagnosis, but never
+        // duplicate one of the sentinels that already have a proper translation above.
+        val rawError = state.error?.takeIf {
+            it !in setOf(
+                DeviceSyncEngine.PASSWORD_REJECTED,
+                DeviceSyncEngine.PASSWORD_INVALID_FORMAT,
+                DeviceSyncEngine.MAILBOX_QUEUED,
+                DeviceSyncEngine.MESSAGE_TOO_LARGE,
+            )
         }
         val pendingConfirmations = state.candidates.filter { it.type == "CODE_CONFIRM" }
         val unconfirmed = pendingConfirmations.filter { it.from !in state.confirmedCandidates }
@@ -363,21 +393,34 @@ object SettingsDeviceSyncScreen : SearchableSettings {
                         Spacer(Modifier.height(16.dp))
                         Text(stringResource(MR.strings.device_sync_peers))
                         state.peers.forEach { peer ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text("${peer.name} (${peer.deviceId.take(8)})", Modifier.weight(1f))
-                                OutlinedButton(onClick = {
-                                    scope.launch { DeviceSyncEngine.forgetPeer(peer.deviceId) }
-                                }) {
-                                    Text(stringResource(MR.strings.device_sync_forget))
+                            Column(Modifier.fillMaxWidth()) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text("${peer.name} (${peer.deviceId.take(8)})", Modifier.weight(1f))
+                                    OutlinedButton(onClick = {
+                                        scope.launch { DeviceSyncEngine.forgetPeer(peer.deviceId) }
+                                    }) {
+                                        Text(stringResource(MR.strings.device_sync_forget))
+                                    }
                                 }
+                                Text(
+                                    if (peer.lastSeen > 0L) {
+                                        stringResource(
+                                            MR.strings.device_sync_peer_last_seen,
+                                            java.text.SimpleDateFormat.getInstance().format(peer.lastSeen),
+                                        )
+                                    } else {
+                                        stringResource(MR.strings.device_sync_peer_never_seen)
+                                    },
+                                )
                             }
                         }
                         Text(stringResource(MR.strings.device_sync_outgoing, state.outgoingPending))
                         Text(stringResource(MR.strings.device_sync_incoming, state.incomingPending))
                         Text(statusText)
+                        linkCheckText?.let { Text(it) }
                         Button(
                             onClick = { scope.launch { DeviceSyncEngine.syncNowManually() } },
                             enabled = !state.syncBusy,
@@ -394,7 +437,24 @@ object SettingsDeviceSyncScreen : SearchableSettings {
                                 Text(stringResource(MR.strings.device_sync_sync_now))
                             }
                         }
-                        state.error?.let { Text(it) }
+                        Button(
+                            onClick = { scope.launch { DeviceSyncEngine.checkLink() } },
+                            enabled = state.peers.isNotEmpty() &&
+                                state.linkCheck != DeviceSyncLinkCheck.CHECKING,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            if (state.linkCheck == DeviceSyncLinkCheck.CHECKING) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                                Spacer(Modifier.size(8.dp))
+                                Text(stringResource(MR.strings.device_sync_check_link_working))
+                            } else {
+                                Text(stringResource(MR.strings.device_sync_check_link))
+                            }
+                        }
+                        rawError?.let { Text(it) }
                     }
                 },
             ),

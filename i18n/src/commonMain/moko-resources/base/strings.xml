@@ -716,12 +716,12 @@
     <string name="device_sync_peers">Paired devices</string>
     <string name="device_sync_sync_now">Sync now</string>
     <string name="device_sync_forget">Forget</string>
-    <string name="device_sync_outgoing">Changes to send: %1$d</string>
-    <string name="device_sync_incoming">Changes to receive: %1$d</string>
+    <string name="device_sync_outgoing">Unconfirmed changes: %1$d events</string>
+    <string name="device_sync_incoming">Received, not applied yet: %1$d events</string>
     <string name="device_sync_relay">Relay server (optional, for different networks)</string>
     <string name="device_sync_paste_qr">Paste QR code</string>
     <string name="device_sync_camera_permission">Allow camera</string>
-    <string name="device_sync_ack_info">Sync files are deleted only after every paired device confirms them.</string>
+    <string name="device_sync_ack_info">An event is one changed work, not one chapter. The number drops only when every paired device confirms it, not when it is sent.</string>
     <string name="device_sync_settings_toggle">Also sync device settings (decoder, reader, player, advanced; off by default)</string>
     <string name="device_sync_device_settings_title">Sync device settings?</string>
     <string name="device_sync_device_settings_warning">Decoder, reader, internal player and advanced settings will be copied between paired devices. Their values depend on each device's codecs, screen and controls, so this is off by default. Library settings are always synced.</string>
@@ -742,13 +742,23 @@
     <string name="device_sync_wsa_join_hint">This device is behind NAT (Windows Subsystem for Android/emulator). Keep this screen open: confirmations and sync replies are collected automatically over this connection.</string>
     <string name="device_sync_status_idle">Not synced yet. Publish from one device and join from the other.</string>
     <string name="device_sync_status_working">Checking the connection and exchanging changes…</string>
-    <string name="device_sync_status_connected">Connected. Waiting for new changes.</string>
-    <string name="device_sync_status_waiting_ack">Changes sent. Waiting for the other device to confirm them.</string>
-    <string name="device_sync_status_incoming">Changes received. Applying them now (up to 5 s).</string>
-    <string name="device_sync_status_mailbox">No direct route right now. Changes are queued in the other device's mailbox and will be collected automatically.</string>
+    <string name="device_sync_status_connected">Linked. Waiting for new changes.</string>
+    <string name="device_sync_status_waiting_ack">Sent, waiting for confirmation from every paired device.</string>
+    <string name="device_sync_status_incoming">Applying received changes in batches of 96…</string>
+    <string name="device_sync_status_mailbox">No route right now. Changes are queued locally on this device; delivery is not confirmed yet.</string>
     <string name="device_sync_status_no_path">No route to the other device in this cycle. Changes stay queued and will be retried automatically.</string>
     <string name="device_sync_password_working">Checking password…</string>
     <string name="device_sync_sync_working">Syncing…</string>
+    <string name="device_sync_status_verify_pending">Password sent. Waiting for the other device to verify it.</string>
+    <string name="device_sync_status_password_rejected">The other device did not accept that password. Check it and try again.</string>
+    <string name="device_sync_status_password_invalid">Password must be 10 letters/digits (no 0, 1, I or O).</string>
+    <string name="device_sync_status_message_too_large">Message too large; it will be split on the next cycle.</string>
+    <string name="device_sync_status_link_ok">Link verified: the paired device answered.</string>
+    <string name="device_sync_status_link_failed">No answer from the paired device. Link not verified.</string>
+    <string name="device_sync_peer_last_seen">Last seen: %1$s</string>
+    <string name="device_sync_peer_never_seen">Never contacted</string>
+    <string name="device_sync_check_link">Check link</string>
+    <string name="device_sync_check_link_working">Checking link…</string>
 
       <!-- Advanced section -->
     <string name="label_network">Networking</string>

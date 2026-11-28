@@ -118,6 +118,25 @@ class DeviceSyncStore(context: Context) {
             .nextBatch(maxEvents, maxChars)
     }
 
+    /**
+     * Events this peer has not confirmed yet. A batch is selected by ACK, not by a send cursor:
+     * advancing the cursor after a mailbox queue (which is not a delivery) made events impossible
+     * to retry, while their outbox files stayed forever waiting for an ACK that never arrived.
+     */
+    internal suspend fun outboxBatchForPeer(
+        peerId: String,
+        maxEvents: Int,
+        maxChars: Int,
+    ): List<DeviceSyncEvent> = withLock {
+        val acked = readAcks()[peerId]?.keys.orEmpty()
+        outbox.listFiles { file -> file.extension == "json" }
+            .orEmpty()
+            .mapNotNull { file -> runCatching { read(file)?.toDeviceSyncEvent() }.getOrNull() }
+            .filterNot { it.opId in acked }
+            .sortedWith(compareBy<DeviceSyncEvent> { it.createdAt }.thenBy { it.opId })
+            .nextBatch(maxEvents, maxChars)
+    }
+
     internal suspend fun outboxCursor(peerId: String): OutboxCursor? = withLock { readCursors()[peerId] }
 
     internal suspend fun saveOutboxCursor(peerId: String, cursor: OutboxCursor) = withLock {
@@ -189,12 +208,14 @@ class DeviceSyncStore(context: Context) {
     suspend fun acknowledge(peerId: String, opIds: List<String>) = withLock {
         if (opIds.isEmpty()) return@withLock
         val config = read(configFile)?.toDeviceSyncConfig() ?: DeviceSyncConfig()
-        val peers = config.peers.map { it.deviceId }.toSet()
-        val acks = runCatching {
-            deviceSyncJson.decodeFromString<MutableMap<String, MutableMap<String, Long>>>(
-                read(acksFile).orEmpty(),
-            )
-        }.getOrDefault(mutableMapOf())
+        // A peer from an old session can never ACK the new code; do not let it block pruning.
+        val activePeers = if (config.code.isBlank()) {
+            config.peers
+        } else {
+            config.peers.filter { it.code == config.code }
+        }
+        val peers = activePeers.map { it.deviceId }.toSet()
+        val acks = readAcks()
 
         val now = System.currentTimeMillis()
         val peerAcks = acks.getOrPut(peerId) { mutableMapOf() }
@@ -218,6 +239,12 @@ class DeviceSyncStore(context: Context) {
     suspend fun outgoingPending(): Int = withLock {
         outbox.listFiles { file -> file.extension == "json" }.orEmpty().size
     }
+
+    private fun readAcks(): MutableMap<String, MutableMap<String, Long>> = runCatching {
+        deviceSyncJson.decodeFromString<MutableMap<String, MutableMap<String, Long>>>(
+            read(acksFile).orEmpty(),
+        )
+    }.getOrDefault(mutableMapOf())
 
     private fun readPendingAcks(): MutableMap<String, MutableList<String>> {
         val decoded = runCatching {
