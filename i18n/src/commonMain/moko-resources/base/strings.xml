@@ -738,6 +738,15 @@
     <string name="device_sync_password_hint">The password is not in the QR or the link. Copy it from the other device.</string>
     <string name="device_sync_wsa_host_hint">This device is behind NAT (Windows Subsystem for Android/emulator), so the other device cannot connect here. Publish from the phone instead and scan its QR here. Replies are collected automatically.</string>
     <string name="device_sync_wsa_join_hint">This device is behind NAT (Windows Subsystem for Android/emulator). Keep this screen open: confirmations and sync replies are collected automatically over this connection.</string>
+    <string name="device_sync_status_idle">Not synced yet. Publish from one device and join from the other.</string>
+    <string name="device_sync_status_working">Checking the connection and exchanging changes…</string>
+    <string name="device_sync_status_connected">Connected. Waiting for new changes.</string>
+    <string name="device_sync_status_waiting_ack">Changes sent. Waiting for the other device to confirm them.</string>
+    <string name="device_sync_status_incoming">Changes received. Applying them now (up to 5 s).</string>
+    <string name="device_sync_status_mailbox">No direct route right now. Changes are queued in the other device's mailbox and will be collected automatically.</string>
+    <string name="device_sync_status_no_path">No route to the other device in this cycle. Changes stay queued and will be retried automatically.</string>
+    <string name="device_sync_password_working">Checking password…</string>
+    <string name="device_sync_sync_working">Syncing…</string>
 
       <!-- Advanced section -->
     <string name="label_network">Networking</string>

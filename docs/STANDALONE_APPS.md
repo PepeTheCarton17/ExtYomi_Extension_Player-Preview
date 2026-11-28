@@ -83,6 +83,12 @@ La biblioteca está disponible siempre en la barra de una standalone y no se pue
 botón de sincronizar aparece en la barra de biblioteca tanto en ExtYomi como en cada app generada.
 
 - ExtYomi sincroniza con todas las apps registradas; una standalone sincroniza solo con su host.
+  **El host y su standalone deben estar en el mismo dispositivo.** La clave de firma se crea en el
+  Android Keystore de cada dispositivo y el paquete generado lleva su huella (`...k<huella>`), así
+  que un APK generado en WSA no puede sincronizar con el ExtYomi del móvil: este último lo rechaza
+  con «generada en otro dispositivo». Regenera la app desde **Explorar → Apps independientes** en
+  el dispositivo donde vayas a usarla. La sincronización entre dispositivos (`DEVICE_SYNC.md`) es
+  otra cosa: mueve la biblioteca de ExtYomi, no instala ni registra standalones en el otro equipo.
 - Cada app tiene un `instanceId` estable. Dos standalones de la misma extensión —incluso en otro
   idioma— son independientes: las entradas se separan por `kind:sourceId:url` en un índice de
   propietario y una app nunca ve ni sobrescribe las de otra.

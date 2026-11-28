@@ -37,7 +37,7 @@ class StandaloneDataProvider : ContentProvider() {
                 callAsStandalone(context, caller, method, extras)
             } else {
                 val app = findApp(context, caller, instanceId)
-                    ?: return bundleOf(ERROR to "UNKNOWN_CALLER ($caller / $instanceId)")
+                    ?: return bundleOf(ERROR to unknownCallerMessage(context, caller, instanceId))
                 callAsHost(context, caller, app, method, extras)
             }
         } catch (e: Exception) {
@@ -174,6 +174,23 @@ class StandaloneDataProvider : ContentProvider() {
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
         grant(context, caller, uri)
         return uri
+    }
+
+    /**
+     * Generated apps use a device-local signing key, so the same extension generates a different
+     * package on each device. An APK copied from WSA to the phone can only talk to WSA's ExtYomi;
+     * the phone must regenerate it. Say so instead of exposing an opaque registry error.
+     */
+    private fun unknownCallerMessage(context: Context, caller: String, instanceId: String): String {
+        val generatedPrefix = "${context.packageName}.standalone."
+        return if (caller.startsWith(generatedPrefix)) {
+            "Esta app independiente se generó en otro dispositivo (o con otra clave de firma) y " +
+                "este ExtYomi no puede sincronizarla. Regenera la app desde Explorar → " +
+                "Apps independientes en ESTE dispositivo e instala el APK resultante aquí. " +
+                "($instanceId)"
+        } else {
+            "Llamada no autorizada al proveedor de sincronización: $caller"
+        }
     }
 
     private fun findApp(context: Context, caller: String, instanceId: String): GeneratedStandaloneApp? {

@@ -14,7 +14,11 @@ object DeviceSyncSettings {
 
     private const val PREFIX = "setting:"
 
-    /** Library display/filter preferences, always synced like the rest of the library. */
+    /**
+     * Every library view/filter preference, always synced like the rest of the library. Keeping
+     * this list in sync with `LibraryPreferences` matters: a missing key makes the other device
+     * silently fall back to its own sort order, hidden categories or filter state.
+     */
     private val KEYS = setOf(
         "pref_display_mode_library",
         "library_sorting_mode",
@@ -23,17 +27,59 @@ object DeviceSyncSettings {
         "display_category_tabs_novel",
         "display_number_of_items",
         "display_unread_badge",
+        "display_local_badge",
         "display_download_badge",
         "display_language_badge",
+        "display_continue_reading_button",
         "library_show_updates_count",
+        "categorized_display",
+        "hidden_categories",
+        "auto_hide_anime_categories",
+        "auto_hide_manga_categories",
         "pref_library_columns_portrait_key",
         "pref_library_columns_landscape_key",
         "pref_animelib_columns_portrait_key",
         "pref_animelib_columns_landscape_key",
+        "pref_novellib_columns_portrait_key",
+        "pref_novellib_columns_landscape_key",
+        "library_random_anime_sort_seed",
+        "library_random_manga_sort_seed",
+        "library_group_mode_anime",
+        "library_group_mode_manga",
+        "library_group_mode_novel",
+        "library_pinned_anime_ids",
+        "library_pinned_manga_ids",
+        "library_pinned_novel_ids",
+        "library_series_anime",
+        "library_series_manga",
+        "library_series_novel",
+        "library_series_covers_anime",
+        "library_series_covers_manga",
+        "library_series_covers_novel",
         "pref_filter_library_unread_v2",
         "pref_filter_animelib_unread_v2",
+        "pref_filter_novellib_unread_v2",
         "pref_filter_library_bookmarked_v2",
         "pref_filter_animelib_bookmarked_v2",
+        "pref_filter_novellib_bookmarked_v2",
+        "pref_filter_library_downloaded_v2",
+        "pref_filter_animelib_downloaded_v2",
+        "pref_filter_novellib_downloaded_v2",
+        "pref_filter_library_started_v2",
+        "pref_filter_animelib_started_v2",
+        "pref_filter_novellib_started_v2",
+        "pref_filter_library_completed_v2",
+        "pref_filter_animelib_completed_v2",
+        "pref_filter_novellib_completed_v2",
+        "pref_filter_library_genres_include",
+        "pref_filter_library_genres_exclude",
+        "pref_filter_animelib_genres_include",
+        "pref_filter_animelib_genres_exclude",
+        "pref_filter_novellib_genres_include",
+        "pref_filter_novellib_genres_exclude",
+        "pref_filter_tags_expanded",
+        "pref_filter_library_interval_custom",
+        "pref_filter_novellib_interval_custom",
     )
 
     /** True when the key is shared, requiring explicit consent for device-specific ones. */

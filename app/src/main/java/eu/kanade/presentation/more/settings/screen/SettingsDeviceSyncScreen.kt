@@ -16,6 +16,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -47,6 +48,7 @@ import com.google.zxing.qrcode.QRCodeWriter
 import eu.kanade.presentation.more.settings.Preference
 import eu.kanade.tachiyomi.util.devicesync.DevicePairing
 import eu.kanade.tachiyomi.util.devicesync.DevicePairingQr
+import eu.kanade.tachiyomi.util.devicesync.DeviceSyncDelivery
 import eu.kanade.tachiyomi.util.devicesync.DeviceSyncEngine
 import eu.kanade.tachiyomi.util.devicesync.DeviceSyncPhase
 import kotlinx.coroutines.flow.collect
@@ -107,6 +109,17 @@ object SettingsDeviceSyncScreen : SearchableSettings {
         val invite = remember(pairingQr) { pairingQr?.let { DevicePairing.encodeInvite(it) }.orEmpty() }
         val qrBitmap = remember(pairingQr) { pairingQr?.let { renderQr(DevicePairing.encodeQr(it)) } }
         val pairingBusy = state.phase != DeviceSyncPhase.IDLE && state.phase != DeviceSyncPhase.PAIRED
+        val statusText = when {
+            state.passwordBusy -> stringResource(MR.strings.device_sync_password_working)
+            state.syncBusy -> stringResource(MR.strings.device_sync_status_working)
+            state.error != null -> stringResource(MR.strings.device_sync_status_no_path)
+            state.incomingPending > 0 -> stringResource(MR.strings.device_sync_status_incoming)
+            state.lastDelivery == DeviceSyncDelivery.MAILBOX ->
+                stringResource(MR.strings.device_sync_status_mailbox)
+            state.outgoingPending > 0 -> stringResource(MR.strings.device_sync_status_waiting_ack)
+            state.lastSyncAt > 0L -> stringResource(MR.strings.device_sync_status_connected)
+            else -> stringResource(MR.strings.device_sync_status_idle)
+        }
         val pendingConfirmations = state.candidates.filter { it.type == "CODE_CONFIRM" }
         val unconfirmed = pendingConfirmations.filter { it.from !in state.confirmedCandidates }
 
@@ -331,9 +344,19 @@ object SettingsDeviceSyncScreen : SearchableSettings {
                             Text(stringResource(MR.strings.device_sync_password_hint))
                             Button(
                                 onClick = { scope.launch { DeviceSyncEngine.submitPassword(password) } },
+                                enabled = !state.passwordBusy,
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
-                                Text(stringResource(MR.strings.device_sync_password))
+                                if (state.passwordBusy) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp,
+                                    )
+                                    Spacer(Modifier.size(8.dp))
+                                    Text(stringResource(MR.strings.device_sync_password_working))
+                                } else {
+                                    Text(stringResource(MR.strings.device_sync_password))
+                                }
                             }
                         }
 
@@ -354,11 +377,22 @@ object SettingsDeviceSyncScreen : SearchableSettings {
                         }
                         Text(stringResource(MR.strings.device_sync_outgoing, state.outgoingPending))
                         Text(stringResource(MR.strings.device_sync_incoming, state.incomingPending))
+                        Text(statusText)
                         Button(
-                            onClick = { scope.launch { DeviceSyncEngine.recordLocalChanges() } },
+                            onClick = { scope.launch { DeviceSyncEngine.syncNowManually() } },
+                            enabled = !state.syncBusy,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            Text(stringResource(MR.strings.device_sync_sync_now))
+                            if (state.syncBusy) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                                Spacer(Modifier.size(8.dp))
+                                Text(stringResource(MR.strings.device_sync_sync_working))
+                            } else {
+                                Text(stringResource(MR.strings.device_sync_sync_now))
+                            }
                         }
                         state.error?.let { Text(it) }
                     }
