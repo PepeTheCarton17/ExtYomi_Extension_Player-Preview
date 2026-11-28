@@ -109,7 +109,11 @@ object SettingsDeviceSyncScreen : SearchableSettings {
         }
         val invite = remember(pairingQr) { pairingQr?.let { DevicePairing.encodeInvite(it) }.orEmpty() }
         val qrBitmap = remember(pairingQr) { pairingQr?.let { renderQr(DevicePairing.encodeQr(it)) } }
-        val pairingBusy = state.phase != DeviceSyncPhase.IDLE && state.phase != DeviceSyncPhase.PAIRED
+        // A published invite is not a busy state: the user must still be able to switch roles,
+        // change the relay or scan another device instead of being locked behind the QR.
+        val pairingBusy = state.phase == DeviceSyncPhase.HOST_WAITING ||
+            state.phase == DeviceSyncPhase.JOIN_WAITING_PASSWORD ||
+            state.phase == DeviceSyncPhase.JOIN_WAITING_ACK
         val errorText = when (state.error) {
             DeviceSyncEngine.PASSWORD_REJECTED ->
                 stringResource(MR.strings.device_sync_status_password_rejected)

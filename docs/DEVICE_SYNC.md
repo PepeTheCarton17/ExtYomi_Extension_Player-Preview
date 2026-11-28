@@ -50,8 +50,14 @@ automáticamente. El propio interruptor es local a cada dispositivo.
 5. En B, escribe esa contraseña (acepta letras y números; no hay 0, 1, I ni O) y pulsa el botón de
    contraseña. El **VERIFY cifrado también se reintenta** contra todas las direcciones mientras
    B espera, de modo que un primer envío fallido no deja la contraseña manual sin efecto. B pasa a
-   **vinculado en cuanto el VERIFY se entrega**: la prueba es que A pueda descifrarlo con el código
-   y la contraseña, no que llegue un `CONFIRM` o un `VERIFY_ACK` posterior.
+   **vinculado solo cuando A confirma que descifró el VERIFY** (`VERIFY_ACK`). Un envío correcto,
+   una cola local o un `CONFIRM` no son prueba de vinculación: así una contraseña errónea no aparece
+   falsamente como vinculada.
+
+El QR pertenece a una acción explícita: solo se muestra mientras se pulsa **Publicar este
+dispositivo** (y sigue tras un reinicio si esa publicación sigue pendiente). Olvidar el último
+dispositivo lo retira y devuelve la pantalla a «sin sincronizar». Quien se une nunca muestra QR,
+aunque tenga guardados el código y su contraseña.
 
 ## WSA / emuladores (sin configurar nada)
 
@@ -89,8 +95,10 @@ Cada buzón va dirigido a un destinatario: se publica en `/{pairing|sync}/<codig
 y solo ese dispositivo lo drena con su `GET`. Antes había un único buzón por código y el emisor
 podía consumir y descartar su propio mensaje mientras sondeaba respuestas: por eso WSA recibía un
 cambio una vez y luego ninguno. Los mensajes cifrados también validan el destinatario (`to`) antes
-de aplicarse. Hay que instalar la versión corregida en **ambos** dispositivos y, si usas relay
-propio, **reiniciarlo con la versión corregida de `server.py`**: un servidor antiguo sigue sirviendo
+de aplicarse. Hay que instalar la versión corregida en **ambos** dispositivos. Pegar una URL de
+relay en la app **no modifica ningún archivo del servidor**: la URL solo dice dónde está el servicio
+que ya corre. Si el relay es tuyo, despliega y reinicia `server.py` en la máquina que lo ejecuta;
+si es un servicio de terceros, quien lo opera ya se encarga. Un servidor antiguo sigue sirviendo
 una sola bandeja por código y seguirá descartando mensajes aunque las apps estén actualizadas.
 
 ## Cifrado y borrado por ACK

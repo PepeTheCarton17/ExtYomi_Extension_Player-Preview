@@ -210,6 +210,11 @@ data class DeviceSyncConfig(
     val syncDeviceSettings: Boolean = false,
     val peers: List<DeviceSyncPeer> = emptyList(),
     /**
+     * True only after the user published this device. A leftover code/password must never turn a
+     * joiner (or a device whose peers were forgotten) into a QR publisher on the next restart.
+     */
+    val hosting: Boolean = false,
+    /**
      * An unfinished join survives a restart. The joiner must be able to get back to the password
      * screen instead of silently appearing paired while the host never verified the secret.
      */
