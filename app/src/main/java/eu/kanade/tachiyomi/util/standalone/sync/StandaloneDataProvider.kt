@@ -4,18 +4,25 @@ import android.content.ContentProvider
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.database.Cursor
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import androidx.core.content.FileProvider
+import androidx.core.content.pm.PackageInfoCompat
 import eu.kanade.domain.ui.GeneratedStandaloneApp
 import eu.kanade.domain.ui.StandaloneScope
 import eu.kanade.domain.ui.UiPreferences
+import eu.kanade.tachiyomi.util.standalone.StandaloneSigningKey
 import kotlinx.coroutines.runBlocking
+import org.json.JSONObject
 import tachiyomi.domain.storage.service.StoragePreferences
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.io.File
+import java.security.MessageDigest
+import java.util.zip.ZipFile
 
 /**
  * Exported only to standalones registered in ExtYomi. Because generated apps use a device-local
@@ -177,33 +184,122 @@ class StandaloneDataProvider : ContentProvider() {
     }
 
     /**
-     * Generated apps use a device-local signing key, so the same extension generates a different
-     * package on each device. An APK copied from WSA to the phone can only talk to WSA's ExtYomi;
-     * the phone must regenerate it. Say so instead of exposing an opaque registry error.
+     * Generated apps use a device-local signing key. If the local registry was lost (reinstall,
+     * preference reset) but the APK was really generated here, recover its scope from the config
+     * embedded in the APK and re-register it. A foreign key is rejected with an actionable message.
      */
     private fun unknownCallerMessage(context: Context, caller: String, instanceId: String): String {
         val generatedPrefix = "${context.packageName}.standalone."
         return if (caller.startsWith(generatedPrefix)) {
-            "Esta app independiente se generó en otro dispositivo (o con otra clave de firma) y " +
-                "este ExtYomi no puede sincronizarla. Regenera la app desde Explorar → " +
-                "Apps independientes en ESTE dispositivo e instala el APK resultante aquí. " +
-                "($instanceId)"
+            "Esta app independiente no coincide con el registro local (paquete o ID $instanceId). " +
+                "Si la clave de firma de este dispositivo cambió al reinstalar ExtYomi, regenera " +
+                "la app desde Explorar → Apps independientes e instala el APK resultante aquí."
         } else {
             "Llamada no autorizada al proveedor de sincronización: $caller"
         }
     }
 
     private fun findApp(context: Context, caller: String, instanceId: String): GeneratedStandaloneApp? {
-        val apps = runCatching { Injekt.get<UiPreferences>().standaloneApps().get() }
-            .getOrDefault(emptyList())
+        val registry = Injekt.get<UiPreferences>().standaloneApps()
+        val apps = runCatching { registry.get() }.getOrDefault(emptyList())
         val app = apps.firstOrNull {
             it.packageName == caller && instanceId.isNotBlank() && it.instanceId == instanceId
-        } ?: return null
-        val uid = runCatching { context.packageManager.getPackageUid(caller, 0) }.getOrNull()
-            ?: return null
-        val uids = context.packageManager.getPackagesForUid(uid)
-        return app.takeIf { uids?.size == 1 && uids.first() == caller }
+        }?.takeIf { hasSingleUid(context, caller) }
+        if (app != null) return app
+        if (!caller.startsWith("${context.packageName}.standalone.")) return null
+
+        val recovered = recoverLocallyGeneratedApp(context, caller, instanceId) ?: return null
+        runCatching {
+            registry.set(apps.filterNot { it.packageName == caller } + recovered)
+        }
+        return recovered
     }
+
+    private fun hasSingleUid(context: Context, caller: String): Boolean {
+        val uid = runCatching { context.packageManager.getPackageUid(caller, 0) }.getOrNull()
+            ?: return false
+        val uids = context.packageManager.getPackagesForUid(uid)
+        return uids?.size == 1 && uids.first() == caller
+    }
+
+    /** Rebuilds the registry entry from the APK itself, but only when signed with our local key. */
+    @Suppress("DEPRECATION")
+    private fun recoverLocallyGeneratedApp(
+        context: Context,
+        caller: String,
+        instanceId: String,
+    ): GeneratedStandaloneApp? {
+        if (instanceId.isBlank() || !hasSingleUid(context, caller)) return null
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            PackageManager.GET_SIGNING_CERTIFICATES
+        } else {
+            @Suppress("DEPRECATION")
+            PackageManager.GET_SIGNATURES
+        }
+        val info = runCatching { context.packageManager.getPackageInfo(caller, flags) }.getOrNull()
+            ?: return null
+        val signer = runCatching {
+            val expected = StandaloneSigningKey.getOrCreate(context).certificate.encoded
+            val actual = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                val signingInfo = info.signingInfo
+                val certs = if (signingInfo?.hasMultipleSigners() == true) {
+                    signingInfo.apkContentsSigners
+                } else {
+                    signingInfo?.signingCertificateHistory
+                }
+                certs?.lastOrNull()?.toByteArray()
+            } else {
+                info.signatures?.lastOrNull()?.toByteArray()
+            }
+            actual != null &&
+                sha256(expected).contentEquals(sha256(actual))
+        }.getOrDefault(false)
+        if (!signer) return null
+
+        val sourceDir = runCatching { context.packageManager.getApplicationInfo(caller, 0).sourceDir }
+            .getOrNull() ?: return null
+        val config = runCatching {
+            ZipFile(sourceDir).use { zip ->
+                val entry = zip.getEntry("assets/${StandaloneScope.CONFIG_ASSET}") ?: return@use null
+                zip.getInputStream(entry).use { it.readBytes().toString(Charsets.UTF_8) }
+            }
+        }.getOrNull() ?: return null
+        val json = runCatching { JSONObject(config) }.getOrNull() ?: return null
+        if (json.optString("generatedBy") != context.packageName ||
+            json.optString("syncAuthority") != authority(context.packageName) ||
+            json.optString("instanceId") != instanceId
+        ) {
+            return null
+        }
+        val kind = json.optString("kind")
+        val sourceId = json.optLong("sourceId", -1L)
+        val extensionPkg = json.optString("extensionPkg")
+        if (kind.isBlank() || sourceId < 0L || extensionPkg.isBlank()) return null
+
+        val label = runCatching {
+            context.packageManager.getApplicationLabel(
+                context.packageManager.getApplicationInfo(caller, 0),
+            ).toString()
+        }.getOrDefault(caller)
+        return GeneratedStandaloneApp(
+            packageName = caller,
+            instanceId = instanceId,
+            label = label,
+            sourceId = sourceId,
+            kind = kind,
+            extensionPkg = extensionPkg,
+            extensionVersionName = info.versionName.orEmpty(),
+            sourceName = label,
+            outputUri = "",
+            apkUri = "",
+            fileName = sourceDir.substringAfterLast('/'),
+            generatedVersionCode = PackageInfoCompat.getLongVersionCode(info),
+            generatedVersionName = info.versionName.orEmpty(),
+        )
+    }
+
+    private fun sha256(bytes: ByteArray): ByteArray =
+        MessageDigest.getInstance("SHA-256").digest(bytes)
 
     private fun hostDownloadsRootUri(context: Context): String? = runCatching {
         Injekt.get<StoragePreferences>().baseStorageDirectory().get()
